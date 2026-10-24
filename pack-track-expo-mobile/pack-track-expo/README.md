@@ -1,3 +1,25 @@
+## Christina's Contribution: Pack Track Mobile Prototype
+
+I created a mobile prototype for Pack Track to explore ways to make coordinating safer walks easier and more accessible.
+
+### Key Features
+
+- **Mobile App Prototype:** A React Native and Expo-based interface designed to support the Pack Track experience.
+- **Buddy Matching:** Matching logic to help users explore walking with compatible buddies.
+- **Route Planning:** A routing service to support planning walking routes.
+- **Nearby Places:** A Google Places service to help locate nearby points of interest.
+
+### Project Goal
+
+My goal was to explore how mobile development and location-based features could support Pack Track's mission of helping people coordinate walks and feel safer getting to their destinations.
+
+### Implementation Notes
+
+This prototype is maintained separately from the team's main application so its features can be reviewed and tested before any integration. It is a development prototype, and the features should be tested and connected to the team's existing systems before being considered production-ready.
+
+**Contributor:** Christina Szele  
+**Repository:** [SJSU Hackathon Safety App](https://github.com/maxogarcia/SJSU_Hackathon_Safety_App)  
+**Branch:** `christina-mobile-prototype`
 # Pack Track — Expo mobile prototype
 
 Pack Track is an SJSU student walking-safety prototype. This version uses **React Native + Expo** for iPhone/Android and includes a map, GPS permission flow, sample businesses/alerts, a routing integration scaffold, opening-hours logic, and route scoring.
