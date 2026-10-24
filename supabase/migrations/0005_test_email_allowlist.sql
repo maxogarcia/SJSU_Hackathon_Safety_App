@@ -13,7 +13,7 @@ create table public.test_email_allowlist (
 -- Only the trigger below (security definer) reads it; no app access.
 alter table public.test_email_allowlist enable row level security;
 
-insert into public.test_email_allowlist (email) values ('imarshshah@gmail.com');
+insert into public.test_email_allowlist (email) values ('imarshshah@gmail.com'), ('emmanuelelizaldeocampo@gmail.com');
 
 create or replace function public.enforce_edu_email()
 returns trigger

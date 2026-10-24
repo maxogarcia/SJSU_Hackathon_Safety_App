@@ -20,7 +20,8 @@ import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
 import { useIncidents } from '@/hooks/use-incidents';
 import { useTheme } from '@/hooks/use-theme';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { createWalkRequest, findOrCreateGroup, getActiveGroup, listMeetupPoints, type MeetupPoint } from '@/lib/api';
+import { createWalkRequest, findOrCreateGroup, getActiveGroup, leaveGroup, listMeetupPoints, type MeetupPoint } from '@/lib/api';
+import { confirmAction } from '@/lib/confirm';
 import {
   formatDistance,
   formatDuration,
@@ -70,6 +71,23 @@ export default function WalkScreen() {
       })
       .catch((e: Error) => setError(e.message));
   }, []);
+
+  const [cancelling, setCancelling] = useState(false);
+  const cancelWalk = async () => {
+    if (!activeGroup) return;
+    const ok = await confirmAction('Cancel this walk?', 'You will leave your group and can start a new walk anytime.', 'Cancel walk', 'Keep walk');
+    if (!ok) return;
+    setCancelling(true);
+    setError(null);
+    try {
+      await leaveGroup(activeGroup);
+      setActiveGroup(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -242,6 +260,7 @@ export default function WalkScreen() {
                   icon="people-outline"
                   onPress={() => router.push({ pathname: '/group/[id]', params: { id: activeGroup } })}
                 />
+                <Button title="Cancel walk" icon="close-circle-outline" variant="secondary" loading={cancelling} onPress={cancelWalk} />
               </Card>
             )}
 

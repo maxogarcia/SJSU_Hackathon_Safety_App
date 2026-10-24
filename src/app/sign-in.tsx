@@ -16,13 +16,14 @@ import { useSession } from '@/providers/session';
 
 const EDU_EMAIL = /^[^\s@]+@([a-z0-9-]+\.)*[a-z0-9-]+\.edu$/i;
 // TEMPORARY: non-.edu test accounts, mirrored in public.test_email_allowlist (migration 0005). Remove before launch.
-const TEST_EMAILS = ['imarshshah@gmail.com'];
+const TEST_EMAILS = ['imarshshah@gmail.com', 'emmanuelelizaldeocampo@gmail.com'];
 
 export default function SignInScreen() {
   const theme = useTheme();
   const { linkError } = useSession();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +41,16 @@ export default function SignInScreen() {
     setLoading(false);
     if (error) setError(error.message);
     else setCodeSent(true);
+  };
+
+  // TEMPORARY: test accounts skip the email link and sign in with a password set in the database.
+  const isTestEmail = TEST_EMAILS.includes(email.trim().toLowerCase());
+  const signInWithPassword = async () => {
+    setLoading(true);
+    setError(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    setLoading(false);
+    if (error) setError(error.message);
   };
 
   // Accepts a 6-digit code, or a pasted sign-in link / the address of the page the link opened.
@@ -131,6 +142,18 @@ export default function SignInScreen() {
                     setCode('');
                   }}
                 />
+              </>
+            ) : isTestEmail ? (
+              <>
+                <Field
+                  label="Test account password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Button title="Sign in" onPress={signInWithPassword} loading={loading} disabled={!password} />
               </>
             ) : (
               <>

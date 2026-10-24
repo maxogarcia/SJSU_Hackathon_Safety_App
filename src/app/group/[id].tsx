@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Vibration, View } from 'react-native';
+import { Pressable, StyleSheet, Vibration, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -41,6 +41,7 @@ import {
 } from '@/lib/directions';
 import { routeSafest } from '@/lib/liveliness';
 import { blockingZones, CATEGORY_LABEL, closestApproach } from '@/lib/safety';
+import { confirmAction } from '@/lib/confirm';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session';
 
@@ -237,18 +238,14 @@ export default function GroupScreen() {
     }
   };
 
-  const confirmLeave = () =>
-    Alert.alert('Leave this group?', 'The others will be re-matched without you.', [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Leave',
-        style: 'destructive',
-        onPress: run('leave', async () => {
-          await leaveGroup(id);
-          router.back();
-        }),
-      },
-    ]);
+  const confirmLeave = async () => {
+    const message = isWalking ? 'Your group will be told you left. Stay safe getting home.' : 'The others will be re-matched without you.';
+    if (!(await confirmAction('Cancel this walk?', message, 'Cancel walk', 'Keep walk'))) return;
+    await run('leave', async () => {
+      await leaveGroup(id);
+      router.back();
+    })();
+  };
 
   if (!group || !me) {
     return (
@@ -417,14 +414,12 @@ export default function GroupScreen() {
         </Card>
       )}
 
+      {(group.status === 'forming' || isWalking) && (me.status === 'joined' || me.status === 'confirmed') && (
+        <Button title="Cancel walk" icon="close-circle-outline" variant="secondary" loading={busy === 'leave'} disabled={!!busy} onPress={confirmLeave} />
+      )}
+
       <View style={styles.rowBetween}>
-        {group.status === 'forming' ? (
-          <ThemedText type="smallBold" themeColor="accent" onPress={busy ? undefined : confirmLeave}>
-            Leave group
-          </ThemedText>
-        ) : (
-          <View />
-        )}
+        <View />
         {(group.status === 'forming' || group.status === 'walking') && (
           <ThemedText type="smallBold" themeColor="accent" onPress={() => setReportOpen(true)}>
             Report a concern
