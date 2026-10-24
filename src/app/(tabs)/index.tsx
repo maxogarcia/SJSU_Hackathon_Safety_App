@@ -28,7 +28,8 @@ import {
   type LatLng,
   type WalkingRoute,
 } from '@/lib/directions';
-import { blockingZones, CATEGORY_LABEL, routeAvoidingZones } from '@/lib/safety';
+import { blockingZones, CATEGORY_LABEL } from '@/lib/safety';
+import { routeSafest, type OpenAlongRoute } from '@/lib/liveliness';
 import { useSession } from '@/providers/session';
 
 const DEPART_OPTIONS = [
@@ -48,6 +49,7 @@ export default function WalkScreen() {
   const [route, setRoute] = useState<WalkingRoute | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [departIn, setDepartIn] = useState(0);
+  const [lively, setLively] = useState<{ open: OpenAlongRoute; brighter: boolean } | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [matching, setMatching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,13 +86,16 @@ export default function WalkScreen() {
     const requestNo = ++routeRequest.current;
     setRoute(null);
     setAvoiding([]);
+    setLively(null);
     if (!from || !to) return;
     setRouteLoading(true);
     try {
-      // Plan around anything already reported on the way.
-      const plan = await routeAvoidingZones({ latitude: from.lat, longitude: from.lng }, to, zones);
+      // Plan around anything already reported on the way, preferring streets with open businesses.
+      const departAt = new Date(Date.now() + departIn * 60 * 1000);
+      const plan = await routeSafest({ latitude: from.lat, longitude: from.lng }, to, zones, departAt);
       if (requestNo === routeRequest.current) {
         setRoute(plan.route);
+        setLively({ open: plan.open, brighter: plan.brighter });
         setAvoiding(plan.avoided.map((z) => CATEGORY_LABEL[z.category] ?? z.title));
       }
     } catch (e) {
@@ -257,6 +262,10 @@ export default function WalkScreen() {
                 </ThemedText>
               )}
             </View>
+            <ThemedText type="small" themeColor="textSecondary">
+              Pick a designated meetup spot, then tap the map to set where you&apos;re headed. We&apos;ll look for students
+              going a similar way.
+            </ThemedText>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
               {points.map((p) => (
                 <Chip key={p.id} label={p.is_staffed ? `${p.name} · staffed` : p.name} selected={p.id === meetupId} onPress={() => selectMeetup(p.id)} />
@@ -286,6 +295,12 @@ export default function WalkScreen() {
                   {routeLoading ? 'Finding a walking route…' : route ? `About ${formatDuration(route.durationS)} to ${destLabel}` : 'No route yet'}
                 </ThemedText>
               </View>
+            )}
+            {lively && lively.open.count > 0 && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {lively.brighter ? 'Takes a brighter street: ' : 'Passes '}
+                {lively.open.count} open {lively.open.count === 1 ? 'place' : 'places'} along the way.
+              </ThemedText>
             )}
             {avoiding.length > 0 && (
               <ThemedText type="small" themeColor="warning">

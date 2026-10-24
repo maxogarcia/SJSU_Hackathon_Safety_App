@@ -39,7 +39,8 @@ import {
   type LatLng,
   type WalkingRoute,
 } from '@/lib/directions';
-import { blockingZones, CATEGORY_LABEL, closestApproach, routeAvoidingZones } from '@/lib/safety';
+import { routeSafest } from '@/lib/liveliness';
+import { blockingZones, CATEGORY_LABEL, closestApproach } from '@/lib/safety';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session';
 
@@ -102,7 +103,7 @@ export default function GroupScreen() {
     if (!soloKey) return;
     let cancelled = false;
     const [fromLat, fromLng, toLat, toLng] = soloKey.split('|')[0].split(',').map(Number);
-    routeAvoidingZones({ latitude: fromLat, longitude: fromLng }, { latitude: toLat, longitude: toLng }, zones)
+    routeSafest({ latitude: fromLat, longitude: fromLng }, { latitude: toLat, longitude: toLng }, zones)
       .then(async (plan) => {
         if (cancelled) return;
         setSolo({ key: soloKey, route: plan.route });
@@ -202,7 +203,7 @@ export default function GroupScreen() {
         const to = { latitude: group.my_destination.lat, longitude: group.my_destination.lng };
         // Already standing in it (e.g. I just reported it): nothing to warn me about.
         if (hits.every((z) => distanceBetween(from, { latitude: z.lat, longitude: z.lng }) <= z.radius_m)) return;
-        const plan = await routeAvoidingZones(from, to, zones);
+        const plan = await routeSafest(from, to, zones);
         if (plan.avoided.length) {
           await updateMyRoute(id, toGeoJsonCoordinates(plan.route.points), plan.avoided[0].id, plan.addedM);
           setReroute({

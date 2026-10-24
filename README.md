@@ -23,6 +23,16 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 Setup: run `supabase/migrations/0003_incidents.sql` in the SQL Editor after 0001 and 0002. To make yourself staff:
 `insert into public.safety_admins select id from auth.users where email = 'you@sjsu.edu';`
 
+
+## Safest route: open businesses
+
+Routes avoid every reported danger zone **and** prefer streets with businesses open at the moment you walk past them (lit storefronts, people around). `routeSafest()` in `src/lib/liveliness.ts` is a drop-in replacement for `routeAvoidingZones()`: it takes the shortest zone-free route, tries up to 3 detours through nearby blocks with several open places, and keeps a detour only if it still avoids every zone, is at most 25% longer, and passes clearly more open places per km. Late at night, when little is open, it just returns the shortest safe route.
+
+- Business data is a Google Places snapshot in `src/data/businesses.json` (no key needed at runtime).
+- `src/lib/place-filter.ts` counts only places that bring people (restaurants, bars, stores, gas stations, gyms, hotels…), and ignores "open 24 hours" for types where that usually means phone hours.
+- Check the data without any keys: `npx tsx scripts/check-safety-data.ts`
+- Refresh the snapshot (needs `GOOGLE_PLACES_KEY` in `.env.local`, Places API (New) enabled): `node --env-file=.env.local scripts/fetch-businesses.mjs`
+
 ## Stack
 
 | Layer | Pick |
