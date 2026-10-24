@@ -34,17 +34,19 @@ export type WalkMapProps = {
   onPinPress?: (id: string) => void;
   onMapPress?: (coordinate: LatLng) => void;
   height?: number;
+  /** Rounded corners; off when the map runs edge to edge. */
+  rounded?: boolean;
 };
 
 // Default view: SJSU main campus.
 const CAMPUS = { latitude: 37.3352, longitude: -121.8811, latitudeDelta: 0.015, longitudeDelta: 0.015 };
 
-export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onPinPress, onMapPress, height = 320 }: WalkMapProps) {
+export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onPinPress, onMapPress, height = 320, rounded = true }: WalkMapProps) {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
   const colors: Record<MapPin['kind'], string> = {
     meetup: theme.textSecondary,
-    'meetup-selected': theme.accent,
+    'meetup-selected': theme.amber,
     destination: theme.danger,
     split: theme.warning,
     'my-split': theme.success,
@@ -73,7 +75,7 @@ export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onP
   return (
     <MapView
       ref={mapRef}
-      style={[styles.map, { height }]}
+      style={[styles.map, { height, borderRadius: rounded ? 16 : 0 }]}
       initialRegion={CAMPUS}
       showsUserLocation
       onPress={onMapPress ? handlePress : undefined}>
@@ -125,6 +127,5 @@ export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onP
 const styles = StyleSheet.create({
   map: {
     width: '100%',
-    borderRadius: 16,
   },
 });

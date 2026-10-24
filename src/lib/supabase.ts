@@ -1,4 +1,4 @@
-import 'expo-sqlite/localStorage/install';
+import '@/lib/local-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 
@@ -11,11 +11,14 @@ if (!supabaseUrl || !supabasePublishableKey) {
   );
 }
 
+// Web export pre-renders pages in Node, where there's no real localStorage (and no session to restore).
+const isServer = typeof window === 'undefined';
+
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
-    storage: localStorage,
-    autoRefreshToken: true,
-    persistSession: true,
+    storage: isServer ? undefined : localStorage,
+    autoRefreshToken: !isServer,
+    persistSession: !isServer,
     detectSessionInUrl: false,
   },
 });

@@ -22,12 +22,10 @@ export default function BuddiesScreen() {
   );
 
   return (
-    <Screen bottomInset={BottomTabInset}>
-      <ThemedText type="subtitle">Walk buddies</ThemedText>
-      <ThemedText themeColor="textSecondary">
-        People you walked with where you both chose to share contact info.
-      </ThemedText>
-
+    <Screen
+      bottomInset={BottomTabInset}
+      title="Walk buddies"
+      subtitle="People you walked with where you both chose to share contact info.">
       {buddies?.length === 0 && (
         <Card>
           <ThemedText type="small" themeColor="textSecondary">

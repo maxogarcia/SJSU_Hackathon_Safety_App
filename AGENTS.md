@@ -8,7 +8,7 @@ PackTrack pairs verified university students so they can walk home from campus t
 
 These are the core promises of the app. Every change must keep them true, and they are enforced in the **database**, not just the UI:
 
-1. **Only `.edu` emails can sign up.** Enforced by the `enforce_edu_email` trigger on `auth.users`. The client check in `sign-in.tsx` is only for a nicer error message.
+1. **Only `.edu` emails can sign up.** Enforced by the `enforce_edu_email` trigger on `auth.users`. The client check in `sign-in.tsx` is only for a nicer error message. **Temporary exception (first draft):** addresses in `public.test_email_allowlist` (migration 0005, mirrored by `TEST_EMAILS` in `sign-in.tsx`) may also sign up, for testing. Those test accounts also have a shared password set directly in `auth.users` and skip the email link (password box in `sign-in.tsx`). Empty the allowlist, `TEST_EMAILS` and the password sign-in before launch.
 2. **No matching until a government ID is verified.** `create_walk_request` and `find_or_create_group` require `profiles.verification_status = 'verified'`. Users can't change that column (column-level `grant update (first_name, avatar_path)`); only `review_id_verification(email, approved)` can, and app users can't call it.
 3. **ID photos are never readable by other students.** The `id-documents` bucket has an insert policy for the owner's own folder and **no select policy**.
 4. **Destinations and routes are private.** `walk_requests` is select-own only. Other group members see only first name, status, split point and split order (via `get_group_details`).
@@ -23,9 +23,12 @@ If a feature seems to need loosening one of these, stop and ask the team instead
 ```
 src/app/                    Expo Router screens
   _layout.tsx               Root Stack + auth guards (Stack.Protected): sign-in → onboarding → (tabs)
-  sign-in.tsx               .edu email → one-time code (supabase.auth.signInWithOtp / verifyOtp)
+  sign-in.tsx               .edu email → sign-in link (or code) via supabase.auth.signInWithOtp
+  auth-callback.tsx         where the email link lands; SessionProvider sets the session from the URL
   onboarding.tsx            name, avatar, contact info, ID photo + selfie → submit_id_verification
-  (tabs)/index.tsx          pick meetup point + destination → Routes API walking route → create request → join group
+  (tabs)/_layout.tsx        JS tab bar (Map · Alerts · Buddies · Profile), see components/app-tabs.tsx
+  (tabs)/index.tsx          "Map" tab: pick meetup point + destination → Routes API walking route → create request → join group
+  (tabs)/alerts.tsx         community alerts feed: active incidents (list_active_incidents) + report button
   (tabs)/buddies.tsx        mutual contacts (get_mutual_contacts)
   (tabs)/profile.tsx        profile, contact info, sign out
   group/[id].tsx            live group: members, split points, confirm/start/arrive, live location
@@ -36,7 +39,7 @@ src/lib/
   directions.ts             Google Routes API (walking) + polyline decoding; straight-line fallback with no key
   images.ts                 image picker, upload to Storage, signed avatar URLs
 src/providers/session.tsx   session + profile context, isOnboarded()
-src/components/             UI kit: Screen, Card, Field, Button, Avatar, SafetyBar, WalkMap (+ .web fallback)
+src/components/             UI kit: Screen (+ Header, Card, Field, Notice), Button, Chip, Avatar, SafetyBar, WalkMap (+ .web fallback)
 supabase/migrations/        database schema, privacy rules and all matching logic
 supabase/tests/             SQL scenario test against plain PostGIS (see "Testing")
 ```
@@ -58,15 +61,15 @@ Member status: `joined → confirmed → arrived` (or `left`).
 
 ## Changing the database
 
-- `0001_packtrack.sql` and `0002_shared_path_matching.sql` have **already been applied** to the team's Supabase project (`ivsgdxmiuahfzfhxkook`). **Never edit applied migrations.** Add a new file `supabase/migrations/000N_<description>.sql` with only the changes (`create or replace function …`, `alter table …`), and tell the human to run it in the Supabase SQL Editor.
+- `0001`–`0005` have **already been applied** to this app's Supabase project (`hgliziuyfbnhvyjgjluh`, us-west-1). The original team project (`ivsgdxmiuahfzfhxkook`) has 0001–0002 applied; run 0003 and 0004 there too if it's still used. **Never edit applied migrations.** Add a new file `supabase/migrations/000N_<description>.sql` with only the changes (`create or replace function …`, `alter table …`), and tell the human to run it in the Supabase SQL Editor.
 - New RPCs: use `security definer`, `set search_path = public, extensions`, check `auth.uid()`, and add a typed wrapper in `src/lib/api.ts`. Internal helpers must `revoke execute … from public, anon, authenticated`.
 - PostGIS is installed in the `extensions` schema. Return lat/lng as plain numbers (`st_y(geom)`, `st_x(geom)`) because PostgREST returns geometry as hex.
 
 ## Testing
 
 ```bash
-npx tsc --noEmit     # 1 known error in src/components/app-tabs.web.tsx (from the Expo template)
-npx expo lint        # 1 known error in src/hooks/use-color-scheme.web.ts (from the Expo template)
+npx tsc --noEmit     # clean (run `npx expo start` once first so expo-env.d.ts exists)
+npx expo lint        # clean
 ```
 
 Database logic: `supabase/tests/scenario.sql` runs the whole flow (signup rules, verification gate, matching, split points, photo and contact privacy) on a throwaway PostGIS container. `00_supabase_stubs.sql` stands in for Supabase's auth/storage/realtime schemas:
@@ -85,8 +88,9 @@ Every check prints `NOTICE: PASS: …`; a failure raises `FAIL: …`. Apply new 
 
 ## Conventions
 
-- Colors come from tokens in `src/constants/theme.ts` (`accent`, `success`, `warning`, `danger`, …) via `ThemedText themeColor=` / `useTheme()`. Don't hardcode colors in screens.
-- Build screens from `Screen`, `Card`, `Field`, `ErrorText` (`src/components/screen.tsx`) and `Button` (`src/components/button.tsx`).
+- The UI follows the Pack Track Figma export (SJSU navy `#073767`, blue `#0055A2`, gold `#E5A823`). It is light-only: `useTheme()` returns `Colors.light` and app.json sets `userInterfaceStyle: "light"`.
+- Colors come from tokens in `src/constants/theme.ts` (`accent`, `navy`, `amber`, `amberSoft`, `border`, `success`, `warning`, `danger`, …) via `ThemedText themeColor=` / `useTheme()`. Don't hardcode colors in screens (the sign-in hero illustration is the one exception).
+- Build screens from `Screen` (pass `title`/`subtitle` for the design's page header, `footer` for a pinned action), `Card`, `Field`, `Notice`, `ErrorText` (`src/components/screen.tsx`), `Button` (`src/components/button.tsx`, `variant="secondary"` is the outlined style) and `Chip`. Icons are `@expo/vector-icons` Ionicons.
 - `react-native-maps` has no web support: map code goes through `WalkMap`, which has a `.web.tsx` fallback.
 - The SafeWalk phone number and meetup coordinates are placeholders to check (`theme.ts`, seed data in the migration).
 - The React Compiler lint rules are on: don't call `setState` directly inside `useEffect`, and don't call `Date.now()` during render.
@@ -95,7 +99,7 @@ Every check prints `NOTICE: PASS: …`; a failure raises `FAIL: …`. Apply new 
 
 - Env vars live in `.env.local` (git-ignored; template in `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, optional `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`. Never commit keys or tokens.
 - The project is developed in WSL, so phones can't reach the dev server over LAN. Use `npx expo start --tunnel`. That needs the Expo CLI signed in to the same account as Expo Go (`npx expo login`, or an `EXPO_TOKEN` env var). Without a login, use `npx expo start --tunnel ngrok`.
-- Supabase's built-in email sender allows only ~2 emails per hour; configure custom SMTP for team use. The Magic Link and Confirm signup email templates must include `{{ .Token }}`, because the app asks for a code, not a link.
+- Supabase's built-in email sender allows only ~2 emails per hour; configure custom SMTP for team use. Sign-in works with Supabase's default emails: they contain a link that redirects to `auth-callback` (`src/lib/auth-link.ts`), which the app turns into a session. That needs `exp://**`, `packtrackapp://**` and `http://localhost:8081/**` under Authentication → URL Configuration → Redirect URLs. Typing a 6-digit code also works if the templates include `{{ .Token }}` (template edits need custom SMTP).
 - To approve a test account: `select public.review_id_verification('someone@sjsu.edu', true);` in the SQL Editor.
 
 ## Known gaps / ideas

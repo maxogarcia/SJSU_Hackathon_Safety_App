@@ -49,7 +49,7 @@ Routes avoid every reported danger zone **and** prefer streets with businesses o
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. Open **SQL Editor** and run each file in [`supabase/migrations/`](supabase/migrations/) in order (`0001`, then `0002`). This creates the tables, privacy rules, storage buckets, Realtime policies and SJSU meetup points.
-3. **Authentication → Email Templates → Magic Link**: add `{{ .Token }}` to the template so the email contains the 6-digit code the app asks for.
+3. **Authentication → URL Configuration → Redirect URLs**: add `exp://**`, `packtrackapp://**` and `http://localhost:8081/**`. The sign-in email contains a link that opens the app; open it on the phone running the app.
 4. **Authentication → Sign In / Providers**: make sure Email is enabled.
 5. **Realtime → Settings**: turn off "Allow public access" if you want only private channels (the app uses private ones).
 
@@ -71,7 +71,9 @@ npm install
 npx expo start
 ```
 
-Scan the QR code with **Expo Go**. The map and camera need a phone (or simulator). The web build shows a simplified list instead of the map.
+Scan the QR code with **Expo Go**. The map and camera need a phone (or simulator). The web build shows an illustrative map with the pins listed instead of the live map.
+
+The UI follows the Pack Track Figma design (SJSU navy/blue/gold, light mode); tokens are in `src/constants/theme.ts`.
 
 ### 5. Approve students (reviewer)
 
@@ -96,7 +98,8 @@ ID photos are in **Storage → id-documents/<user id>/**.
 src/app/              screens (Expo Router)
   sign-in.tsx         .edu email + one-time code
   onboarding.tsx      profile photo, contact info, ID + selfie
-  (tabs)/index.tsx    plan a walk and get matched
+  (tabs)/index.tsx    Map tab: plan a walk and get matched
+  (tabs)/alerts.tsx   live community alerts (reported problems)
   (tabs)/buddies.tsx  people you mutually shared with
   (tabs)/profile.tsx  your profile and contact info
   group/[id].tsx      live group: members, split points, live locations

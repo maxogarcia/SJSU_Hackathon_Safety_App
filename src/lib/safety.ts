@@ -68,20 +68,58 @@ export function routeLength(route: LatLng[]) {
   return s;
 }
 
-/** Two candidate waypoints just outside the zone, on either side of where the route crosses it. */
-function sideWaypoints(route: LatLng[], z: Zone): LatLng[] {
+/**
+ * The route's points about `span` metres before and after `point`. At a corner the single segment the
+ * zone sits on points along one street only, so the chord between these is a better local direction.
+ */
+function chordAround(route: LatLng[], seg: number, point: LatLng, span: number): [LatLng, LatLng] {
+  let i = seg;
+  let back = distanceBetween(point, route[i]);
+  while (i > 0 && back < span) {
+    back += distanceBetween(route[i], route[i - 1]);
+    i--;
+  }
+  let j = Math.min(seg + 1, route.length - 1);
+  let fwd = distanceBetween(point, route[j]);
+  while (j < route.length - 1 && fwd < span) {
+    fwd += distanceBetween(route[j], route[j + 1]);
+    j++;
+  }
+  return [route[i], route[j]];
+}
+
+/**
+ * Candidate waypoints `offset` metres from the zone centre on either side of the route, using two local
+ * directions: the segment the zone sits on, and the chord across it (better at corners, where the
+ * segment's sideways direction can point straight down the next street).
+ */
+function sideWaypoints(route: LatLng[], z: Zone, offset: number): LatLng[] {
   const c = { latitude: z.lat, longitude: z.lng };
   const { seg, point } = closestApproach(route, c);
-  const a = toXY(route[seg], c), b = toXY(route[Math.min(seg + 1, route.length - 1)], c);
-  let nx = -(b.y - a.y), ny = b.x - a.x;
-  const n = Math.hypot(nx, ny) || 1;
-  nx /= n; ny /= n;
-  const off = z.radius_m + 35;
   const p = toXY(point, c);
   // If the route passes right through the centre, offset from the centre; otherwise push outwards.
   const base = Math.hypot(p.x, p.y) < 1 ? { x: 0, y: 0 } : p;
-  return [fromXY(base.x + nx * off, base.y + ny * off, c), fromXY(base.x - nx * off, base.y - ny * off, c)];
+  const directions: [LatLng, LatLng][] = [
+    chordAround(route, seg, point, z.radius_m + 20),
+    [route[seg], route[Math.min(seg + 1, route.length - 1)]],
+  ];
+  const out: LatLng[] = [];
+  for (const [from, to] of directions) {
+    const a = toXY(from, c), b = toXY(to, c);
+    let nx = -(b.y - a.y), ny = b.x - a.x;
+    const n = Math.hypot(nx, ny) || 1;
+    nx /= n; ny /= n;
+    for (const side of [1, -1]) {
+      const w = fromXY(base.x + side * nx * offset, base.y + side * ny * offset, c);
+      // Skip near-duplicates (on a straight street both directions agree).
+      if (!out.some((o) => distanceBetween(o, w) < 15)) out.push(w);
+    }
+  }
+  return out;
 }
+
+/** How far past the zone's edge to put detour waypoints; wider only if the closer ones don't clear it. */
+const DETOUR_MARGINS_M = [35, 90, 160];
 
 export type Avoidance = {
   route: WalkingRoute;
@@ -93,7 +131,8 @@ export type Avoidance = {
 
 /**
  * Walking route from `from` to `to` that stays out of every zone it can.
- * Tries going around each blocking zone on both sides and keeps the shortest route that clears it.
+ * Tries going around each blocking zone on both sides (widening the detour if needed) and keeps the
+ * shortest route that clears it. `maxTries` caps how many zones it attempts.
  */
 export async function routeAvoidingZones(from: LatLng, to: LatLng, zones: Zone[], maxTries = 3): Promise<Avoidance> {
   const direct = await getWalkingRoute(from, to);
@@ -107,16 +146,21 @@ export async function routeAvoidingZones(from: LatLng, to: LatLng, zones: Zone[]
   let via: LatLng[] = [];
   const avoided: Zone[] = [];
   for (let i = 0; i < maxTries; i++) {
-    const hit = blockingZones(best.points, avoidable).filter((z) => !avoided.includes(z))[0];
+    const hit = blockingZones(best.points, avoidable).find((z) => !avoided.includes(z) && !unavoidable.includes(z));
     if (!hit) break;
     let winner: { route: WalkingRoute; via: LatLng[] } | null = null;
-    for (const w of sideWaypoints(best.points, hit)) {
-      const candidateVia = insertInOrder(via, w, from);
-      const r = await getWalkingRoute(from, to, candidateVia);
-      if (routeHitsZone(r.points, hit)) continue;
-      if (!winner || r.distanceM < winner.route.distanceM) winner = { route: r, via: candidateVia };
+    for (const margin of DETOUR_MARGINS_M) {
+      for (const w of sideWaypoints(best.points, hit, hit.radius_m + margin)) {
+        const candidateVia = insertInOrder(via, w, from);
+        const r = await getWalkingRoute(from, to, candidateVia);
+        // Must clear this zone without walking back into one already routed around.
+        if (routeHitsZone(r.points, hit) || avoided.some((z) => routeHitsZone(r.points, z))) continue;
+        if (!winner || r.distanceM < winner.route.distanceM) winner = { route: r, via: candidateVia };
+      }
+      if (winner) break;
     }
-    if (!winner) { unavoidable.push(hit); break; }
+    // Can't get around this one; keep going so the other zones are still avoided.
+    if (!winner) { unavoidable.push(hit); continue; }
     best = winner.route;
     via = winner.via;
     avoided.push(hit);

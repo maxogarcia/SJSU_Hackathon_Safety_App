@@ -1,25 +1,33 @@
+// Profile (design: "Your profile" frame): photo, first name, contact info, dashboard, sign out.
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
-import { Card, ErrorText, Field, Screen } from '@/components/screen';
+import { Card, ErrorText, Field, Notice, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing, type ThemeColor } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { fetchContactInfo, updateContactInfo, updateProfile, type VerificationStatus } from '@/lib/api';
 import { pickImage, uploadImage } from '@/lib/images';
 import { useSession } from '@/providers/session';
 
-const VERIFICATION: Record<VerificationStatus, { label: string; color: ThemeColor }> = {
-  unverified: { label: 'Not verified', color: 'danger' },
-  pending: { label: 'ID under review', color: 'warning' },
-  verified: { label: 'Verified student', color: 'success' },
-  rejected: { label: 'Verification rejected', color: 'danger' },
+const VERIFICATION: Record<
+  VerificationStatus,
+  { label: string; color: ThemeColor; icon: 'checkmark-circle-outline' | 'hourglass-outline' | 'alert-circle-outline' }
+> = {
+  unverified: { label: 'Not verified', color: 'danger', icon: 'alert-circle-outline' },
+  pending: { label: 'ID under review', color: 'warning', icon: 'hourglass-outline' },
+  verified: { label: 'Verified', color: 'success', icon: 'checkmark-circle-outline' },
+  rejected: { label: 'Verification rejected', color: 'danger', icon: 'alert-circle-outline' },
 };
 
 export default function ProfileScreen() {
+  const theme = useTheme();
   const { session, profile, refreshProfile, signOut } = useSession();
+  const [firstName, setFirstName] = useState(profile?.first_name ?? '');
   const [phone, setPhone] = useState('');
   const [instagram, setInstagram] = useState('');
   const [saving, setSaving] = useState(false);
@@ -50,12 +58,20 @@ export default function ProfileScreen() {
     }
   };
 
-  const saveContact = async () => {
+  const save = async () => {
     if (!userId) return;
+    if (!firstName.trim()) {
+      setError('First name is required.');
+      return;
+    }
     setSaving(true);
     setSaved(false);
     setError(null);
     try {
+      if (firstName.trim() !== profile?.first_name) {
+        await updateProfile(userId, { first_name: firstName.trim() });
+        await refreshProfile();
+      }
       await updateContactInfo(userId, {
         phone: phone.trim() || null,
         instagram: instagram.trim().replace(/^@/, '') || null,
@@ -71,45 +87,73 @@ export default function ProfileScreen() {
   const verification = VERIFICATION[profile?.verification_status ?? 'unverified'];
 
   return (
-    <Screen bottomInset={BottomTabInset}>
-      <View style={styles.header}>
-        <Avatar path={profile?.avatar_path} name={profile?.first_name} size={80} />
+    <Screen bottomInset={BottomTabInset} title="Your profile" subtitle="A familiar face for your next walk.">
+      <Card style={styles.photoCard}>
+        <View>
+          <Avatar path={profile?.avatar_path} name={profile?.first_name} size={66} />
+          <View style={[styles.cam, { backgroundColor: theme.accent, borderColor: theme.backgroundElement }]}>
+            <Ionicons name="camera" size={12} color={theme.onAccent} />
+          </View>
+        </View>
         <View style={styles.flex}>
-          <ThemedText type="subtitle">{profile?.first_name}</ThemedText>
+          <ThemedText type="smallBold">Profile photo · Required</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            {session?.user.email}
+            Help your pack recognize you. Use a clear photo of your face.
           </ThemedText>
-          <ThemedText type="smallBold" themeColor={verification.color}>
-            {verification.label}
+          <ThemedText type="smallBold" themeColor="accent" onPress={changePhoto}>
+            Change photo
           </ThemedText>
         </View>
-      </View>
-      <Button title="Change photo" variant="secondary" onPress={changePhoto} />
-
-      <Card>
-        <ThemedText type="smallBold">Contact info</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          Only shared with walk buddies who also chose to share with you. Your university email is included.
-        </ThemedText>
-        <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-        <Field label="Instagram" value={instagram} onChangeText={setInstagram} autoCapitalize="none" />
-        <Button title={saved ? 'Saved' : 'Save contact info'} onPress={saveContact} loading={saving} />
       </Card>
 
-      <Button title="Campus safety dashboard" variant="secondary" onPress={() => router.push('/admin')} />
+      <View style={styles.verified}>
+        <Ionicons name={verification.icon} size={18} color={theme[verification.color]} />
+        <ThemedText type="small" themeColor={verification.color}>
+          {session?.user.email} · {verification.label}
+        </ThemedText>
+      </View>
+
+      <Field label="First name" value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
+      <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+      <Field label="Instagram" value={instagram} onChangeText={setInstagram} autoCapitalize="none" />
+
+      <Notice icon="lock-closed-outline">
+        Your first name and photo are shared with your assigned group. Contact info is only shared with walk buddies who
+        also chose to share with you. Your school email stays private.
+      </Notice>
+
       <ErrorText message={error} />
-      <Button title="Sign out" variant="secondary" onPress={signOut} />
+      <Button title={saved ? 'Saved' : 'Save profile'} onPress={save} loading={saving} />
+      <Button title="Campus safety dashboard" icon="stats-chart-outline" variant="secondary" onPress={() => router.push('/admin')} />
+      <Button title="Sign out" icon="log-out-outline" variant="secondary" onPress={signOut} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-  },
   flex: {
     flex: 1,
+    gap: Spacing.one,
+  },
+  photoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  cam: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verified: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
 });

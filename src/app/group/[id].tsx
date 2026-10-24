@@ -2,10 +2,11 @@
 // and live location over a private Realtime channel. Data comes from the get_group_details RPC and
 // refreshes on Realtime changes to group_members / walk_groups.
 
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Vibration, View } from 'react-native';
+import { Pressable, StyleSheet, Vibration, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -13,9 +14,11 @@ import { ReportSheet } from '@/components/report-sheet';
 import { Card, ErrorText, Screen } from '@/components/screen';
 import { SafetyBar } from '@/components/safety-bar';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
 import { useIncidents } from '@/hooks/use-incidents';
-import { Spacing, type ThemeColor } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { Radius, Spacing, type ThemeColor } from '@/constants/theme';
 import {
   confirmGroup,
   getGroupDetails,
@@ -38,6 +41,7 @@ import {
 } from '@/lib/directions';
 import { routeSafest } from '@/lib/liveliness';
 import { blockingZones, CATEGORY_LABEL, closestApproach } from '@/lib/safety';
+import { confirmAction } from '@/lib/confirm';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session';
 
@@ -52,6 +56,7 @@ const MEMBER_STATUS: Record<MemberStatus, { label: string; color: ThemeColor }> 
 
 export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const theme = useTheme();
   const { session, profile } = useSession();
   const [group, setGroup] = useState<GroupDetails | null>(null);
   const [walkers, setWalkers] = useState<Record<string, LiveWalker>>({});
@@ -233,22 +238,19 @@ export default function GroupScreen() {
     }
   };
 
-  const confirmLeave = () =>
-    Alert.alert('Leave this group?', 'The others will be re-matched without you.', [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Leave',
-        style: 'destructive',
-        onPress: run('leave', async () => {
-          await leaveGroup(id);
-          router.back();
-        }),
-      },
-    ]);
+  const confirmLeave = async () => {
+    const message = isWalking ? 'Your group will be told you left. Stay safe getting home.' : 'The others will be re-matched without you.';
+    if (!(await confirmAction('Cancel this walk?', message, 'Cancel walk', 'Keep walk'))) return;
+    await run('leave', async () => {
+      await leaveGroup(id);
+      router.back();
+    })();
+  };
 
   if (!group || !me) {
     return (
-      <Screen safeTop={false}>
+      <Screen>
+        <BackLink />
         <ThemedText themeColor="textSecondary">{error ?? 'Loading your group…'}</ThemedText>
       </Screen>
     );
@@ -258,6 +260,7 @@ export default function GroupScreen() {
   const activeMembers = group.members.filter((m) => m.status === 'joined' || m.status === 'confirmed');
   const everyoneConfirmed = activeMembers.length >= 2 && activeMembers.every((m) => m.status === 'confirmed');
   const departAt = new Date(group.depart_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const walkerCount = group.members.filter((m) => m.status !== 'left').length;
 
   const pins: MapPin[] = [
     {
@@ -307,7 +310,7 @@ export default function GroupScreen() {
   }));
 
   return (
-    <Screen safeTop={false}>
+    <Screen title={headline(group, others.length)} subtitle={`Meet at ${group.meetup_point.name}`} headerRight={<BackLink />}>
       {reroute && (
         <Card>
           <ThemedText type="smallBold" themeColor="warning">
@@ -316,48 +319,75 @@ export default function GroupScreen() {
           <Button compact variant="secondary" title="Got it" onPress={() => setReroute(null)} />
         </Card>
       )}
-      <Card>
-        <ThemedText type="smallBold">{headline(group, others.length)}</ThemedText>
+
+      <View>
+        <WalkMap
+          pins={pins}
+          route={fromGeoJsonCoordinates(group.shared_route)}
+          soloRoute={soloRoute?.points}
+          previousRoute={reroute?.previous}
+          zones={mapZones}
+          height={260}
+        />
+        <ThemedView type="backgroundElement" style={styles.eta} pointerEvents="none">
+          <Ionicons name="footsteps" size={14} color={theme.accent} />
+          <ThemedText type="small">{STATUS_PILL[group.status]}</ThemedText>
+        </ThemedView>
+      </View>
+
+      <View style={styles.place}>
+        <View style={[styles.badge, { backgroundColor: theme.amberSoft }]}>
+          <ThemedText style={[styles.badgeText, { color: theme.navy }]}>A</ThemedText>
+        </View>
+        <View style={styles.flex}>
+          <ThemedText style={styles.placeName}>{group.meetup_point.name}</ThemedText>
+          {group.meetup_point.description && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {group.meetup_point.description}
+            </ThemedText>
+          )}
+        </View>
+      </View>
+
+      <ThemedView type="backgroundSelected" style={styles.leaves}>
+        <Ionicons name="time-outline" size={18} color={theme.accent} />
+        <ThemedText type="smallBold">Leaves {departAt}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          Meet at {group.meetup_point.name} · departs {departAt}
+          · {walkerCount} {walkerCount === 1 ? 'Spartan' : 'Spartans'}
         </ThemedText>
-        {others.length > 0 && me.walk_alone_m != null && (
-          <ThemedText type="small" themeColor="textSecondary">
-            {`You'll walk with the group, then about ${formatDistance(soloRoute?.distanceM ?? me.walk_alone_m)} on your own (dashed line). For privacy, groups split at least a block before anyone's home.`}
-          </ThemedText>
-        )}
-      </Card>
+      </ThemedView>
 
-      <WalkMap
-        pins={pins}
-        route={fromGeoJsonCoordinates(group.shared_route)}
-        soloRoute={soloRoute?.points}
-        previousRoute={reroute?.previous}
-        zones={mapZones}
-      />
-
-      {(group.status === 'forming' || group.status === 'walking') && (
-        <Button variant="secondary" title="Report a problem on the way" onPress={() => setReportOpen(true)} />
+      {others.length > 0 && me.walk_alone_m != null && (
+        <ThemedText type="small" themeColor="textSecondary">
+          {`You'll walk with the group, then about ${formatDistance(soloRoute?.distanceM ?? me.walk_alone_m)} on your own (dashed line). For privacy, groups split at least a block before anyone's home.`}
+        </ThemedText>
       )}
 
+      <View style={styles.rowBetween}>
+        <ThemedText type="smallBold">Get to know your pack</ThemedText>
+        <ThemedText type="small" themeColor="success">
+          ID verified students
+        </ThemedText>
+      </View>
       <View style={styles.members}>
         {group.members.map((m) => (
-          <MemberRow key={m.user_id} member={m} showOrder={others.length > 0} />
+          <MemberTile key={m.user_id} member={m} showOrder={others.length > 0} />
         ))}
       </View>
 
       {group.status === 'forming' && me.status === 'joined' && (
-        <Card>
+        <>
           <ThemedText type="small" themeColor="textSecondary">
             Confirming shares your profile photo with this group only, and you&apos;ll see theirs once they confirm too.
           </ThemedText>
-          <Button title="Confirm and share my photo" loading={busy === 'confirm'} onPress={run('confirm', () => confirmGroup(id))} />
-        </Card>
+          <Button title="Confirm and share my photo" icon="checkmark" loading={busy === 'confirm'} onPress={run('confirm', () => confirmGroup(id))} />
+        </>
       )}
 
       {group.status === 'forming' && me.status === 'confirmed' && (
         <Button
           title={everyoneConfirmed ? "Everyone's here — start walking" : 'Waiting for everyone to confirm'}
+          icon="walk-outline"
           disabled={!everyoneConfirmed}
           loading={busy === 'start'}
           onPress={run('start', () => startWalk(id))}
@@ -365,7 +395,7 @@ export default function GroupScreen() {
       )}
 
       {isWalking && me.status === 'confirmed' && (
-        <Button title="I'm home safe" loading={busy === 'arrive'} onPress={run('arrive', () => markArrived(id))} />
+        <Button title="I'm home safe" icon="home-outline" loading={busy === 'arrive'} onPress={run('arrive', () => markArrived(id))} />
       )}
 
       {me.status === 'arrived' && (
@@ -384,12 +414,24 @@ export default function GroupScreen() {
         </Card>
       )}
 
-      {group.status === 'forming' && (
-        <Button title="Leave group" variant="secondary" loading={busy === 'leave'} onPress={confirmLeave} />
+      {(group.status === 'forming' || isWalking) && (me.status === 'joined' || me.status === 'confirmed') && (
+        <Button title="Cancel walk" icon="close-circle-outline" variant="secondary" loading={busy === 'leave'} disabled={!!busy} onPress={confirmLeave} />
       )}
+
+      <View style={styles.rowBetween}>
+        <View />
+        {(group.status === 'forming' || group.status === 'walking') && (
+          <ThemedText type="smallBold" themeColor="accent" onPress={() => setReportOpen(true)}>
+            Report a concern
+          </ThemedText>
+        )}
+      </View>
 
       <ErrorText message={error} />
       <SafetyBar />
+      <ThemedText type="small" themeColor="textSecondary">
+        Walking together does not guarantee safety. In an emergency, call 911.
+      </ThemedText>
       <ReportSheet
         visible={reportOpen}
         onClose={() => setReportOpen(false)}
@@ -399,14 +441,33 @@ export default function GroupScreen() {
   );
 }
 
+const STATUS_PILL: Record<GroupDetails['status'], string> = {
+  forming: 'Head to your meetup',
+  walking: 'Walking together',
+  completed: 'Walk complete',
+  cancelled: 'Group cancelled',
+};
+
+function BackLink() {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      hitSlop={12}
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+      style={[styles.back, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+      <Ionicons name="close" size={20} color={theme.text} />
+    </Pressable>
+  );
+}
+
 function headline(group: GroupDetails, otherCount: number) {
   switch (group.status) {
     case 'forming':
-      return otherCount === 0
-        ? 'Looking for students heading your way…'
-        : `Matched with ${otherCount} ${otherCount === 1 ? 'student' : 'students'}`;
+      return otherCount === 0 ? 'Finding your pack…' : 'Your pack is assigned';
     case 'walking':
-      return 'Walking — stay together until your split point';
+      return 'Walking with your pack';
     case 'completed':
       return 'Everyone made it home';
     case 'cancelled':
@@ -414,28 +475,23 @@ function headline(group: GroupDetails, otherCount: number) {
   }
 }
 
-function MemberRow({ member, showOrder }: { member: GroupMember; showOrder: boolean }) {
+function MemberTile({ member, showOrder }: { member: GroupMember; showOrder: boolean }) {
   const status = MEMBER_STATUS[member.status];
   return (
-    <Card>
-      <View style={styles.memberRow}>
-        <Avatar path={member.avatar_path} name={member.first_name} />
-        <View style={styles.memberText}>
-          <ThemedText type="smallBold">
-            {member.first_name ?? 'Walker'}
-            {member.is_me ? ' (you)' : ''}
-          </ThemedText>
-          {showOrder && member.split_order != null && (
-            <ThemedText type="small" themeColor="textSecondary">
-              Heads off {ordinal(member.split_order)}
-            </ThemedText>
-          )}
-        </View>
-        <ThemedText type="smallBold" themeColor={status.color}>
-          {status.label}
+    <View style={styles.member}>
+      <Avatar path={member.avatar_path} name={member.first_name} size={52} />
+      <ThemedText type="smallBold" numberOfLines={1}>
+        {member.first_name ?? 'Walker'}
+      </ThemedText>
+      <ThemedText type="small" themeColor={member.is_me ? 'textSecondary' : status.color} style={styles.tiny}>
+        {member.is_me ? `You · ${status.label}` : status.label}
+      </ThemedText>
+      {showOrder && member.split_order != null && (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.tiny}>
+          Heads off {ordinal(member.split_order)}
         </ThemedText>
-      </View>
-    </Card>
+      )}
+    </View>
   );
 }
 
@@ -444,15 +500,76 @@ function ordinal(n: number) {
 }
 
 const styles = StyleSheet.create({
-  members: {
-    gap: Spacing.two,
+  flex: {
+    flex: 1,
   },
-  memberRow: {
+  back: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eta: {
+    position: 'absolute',
+    left: 14,
+    top: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
+    gap: 6,
+    borderRadius: Radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    elevation: 3,
   },
-  memberText: {
-    flex: 1,
+  place: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  badge: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  placeName: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
+  leaves: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    borderRadius: Radius.md,
+    padding: 12,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  members: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    rowGap: Spacing.three,
+  },
+  member: {
+    alignItems: 'center',
+    width: 84,
+    gap: 2,
+  },
+  tiny: {
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
   },
 });

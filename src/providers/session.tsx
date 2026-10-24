@@ -1,14 +1,18 @@
 import type { Session } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 import { createContext, use, useCallback, useEffect, useState, type PropsWithChildren } from 'react';
 import { AppState } from 'react-native';
 
 import { fetchProfile, type Profile } from '@/lib/api';
+import { isAuthUrl, signInFromUrl } from '@/lib/auth-link';
 import { supabase } from '@/lib/supabase';
 
 type SessionContextValue = {
   session: Session | null;
   profile: Profile | null;
   isLoading: boolean;
+  /** Why the last email sign-in link failed (expired, already used…), shown on the sign-in screen. */
+  linkError: string | null;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -25,6 +29,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const loadProfile = useCallback(async (next: Session | null) => {
     try {
@@ -50,6 +55,16 @@ export function SessionProvider({ children }: PropsWithChildren) {
     return () => sub.subscription.unsubscribe();
   }, [loadProfile]);
 
+  // Email sign-in links open the app (cold start or while running); turn them into a session.
+  useEffect(() => {
+    const handle = (url: string | null) => {
+      if (url && isAuthUrl(url)) signInFromUrl(url).then(setLinkError);
+    };
+    Linking.getInitialURL().then(handle);
+    const sub = Linking.addEventListener('url', ({ url }) => handle(url));
+    return () => sub.remove();
+  }, []);
+
   // Re-check the profile when the app comes back to the foreground, so an ID approval
   // made by a reviewer shows up without a restart.
   useEffect(() => {
@@ -65,7 +80,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   return (
-    <SessionContext value={{ session, profile, isLoading, refreshProfile, signOut }}>
+    <SessionContext value={{ session, profile, isLoading, linkError, refreshProfile, signOut }}>
       {children}
     </SessionContext>
   );

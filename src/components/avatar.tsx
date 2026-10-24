@@ -25,8 +25,8 @@ export function Avatar({ path, name, size = 48, localUri }: AvatarProps) {
 
   // No photo, or it isn't shared with you yet — show initials.
   return (
-    <View style={[styles.fallback, shape, { backgroundColor: theme.backgroundSelected }]}>
-      <ThemedText type="smallBold" style={{ fontSize: size * 0.4, lineHeight: size * 0.5 }}>
+    <View style={[styles.fallback, shape, { backgroundColor: theme.amberSoft }]}>
+      <ThemedText type="smallBold" style={{ fontSize: size * 0.4, lineHeight: size * 0.5, color: theme.navy }}>
         {(name ?? '?').slice(0, 1).toUpperCase()}
       </ThemedText>
     </View>

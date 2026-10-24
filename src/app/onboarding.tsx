@@ -1,17 +1,21 @@
+// First-run profile + ID verification (design: "Your profile" frame).
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
-import { Card, ErrorText, Field, Screen } from '@/components/screen';
+import { Card, ErrorText, Field, Notice, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { submitIdVerification, updateContactInfo, updateProfile } from '@/lib/api';
 import { pickImage, uploadImage, type PickedImage } from '@/lib/images';
 import { useSession } from '@/providers/session';
 
 export default function OnboardingScreen() {
+  const theme = useTheme();
   const { session, profile, refreshProfile, signOut } = useSession();
   const [firstName, setFirstName] = useState(profile?.first_name ?? '');
   const [phone, setPhone] = useState('');
@@ -61,12 +65,21 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <Screen>
-      <ThemedText type="subtitle">Verify it&apos;s you</ThemedText>
-      <ThemedText themeColor="textSecondary">
-        Everyone on PackTrack is a verified student. Your ID is only seen by our review team — never by other students.
-      </ThemedText>
-
+    <Screen
+      title="Your profile"
+      subtitle="A familiar face for your next walk."
+      footer={
+        <>
+          <ErrorText message={error} />
+          <Button title="Save profile and submit ID" onPress={submit} loading={saving} disabled={!ready} />
+          <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
+            First name, a profile photo, your ID and a selfie are required.{' '}
+            <ThemedText type="small" themeColor="accent" onPress={signOut}>
+              Sign out
+            </ThemedText>
+          </ThemedText>
+        </>
+      }>
       {profile?.verification_status === 'rejected' && (
         <Card>
           <ThemedText type="smallBold" themeColor="danger">
@@ -75,65 +88,76 @@ export default function OnboardingScreen() {
         </Card>
       )}
 
-      <Card>
-        <ThemedText type="smallBold">1. Your profile</ThemedText>
-        <View style={styles.avatarRow}>
-          <Avatar path={profile?.avatar_path} localUri={avatar?.uri} name={firstName} size={72} />
-          <View style={styles.flex}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Your photo is only shown to people in a walking group you both agreed to join.
+      <Card style={styles.photoCard}>
+        <View>
+          <Avatar path={profile?.avatar_path} localUri={avatar?.uri} name={firstName} size={66} />
+          <View style={[styles.cam, { backgroundColor: theme.accent, borderColor: theme.backgroundElement }]}>
+            <Ionicons name="camera" size={12} color={theme.onAccent} />
+          </View>
+        </View>
+        <View style={styles.flex}>
+          <ThemedText type="smallBold">Profile photo · Required</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Help your pack recognize you. Use a clear photo of your face. Only people in a group you both confirmed see it.
+          </ThemedText>
+          <View style={styles.links}>
+            <ThemedText type="smallBold" themeColor="accent" onPress={choose(setAvatar, { source: 'camera', square: true, frontCamera: true })}>
+              Take photo
+            </ThemedText>
+            <ThemedText type="smallBold" themeColor="accent" onPress={choose(setAvatar, { source: 'library', square: true })}>
+              Choose photo
             </ThemedText>
           </View>
         </View>
-        <View style={styles.buttonRow}>
-          <Button compact variant="secondary" title="Take photo" onPress={choose(setAvatar, { source: 'camera', square: true, frontCamera: true })} />
-          <Button compact variant="secondary" title="Choose photo" onPress={choose(setAvatar, { source: 'library', square: true })} />
-        </View>
-        <Field label="First name" value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
       </Card>
 
-      <Card>
-        <ThemedText type="smallBold">2. Contact info (private)</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          Only shared after a walk, and only with someone who also chooses to share with you.
+      <View style={styles.verified}>
+        <Ionicons name="mail-outline" size={18} color={theme.success} />
+        <ThemedText type="small" themeColor="success">
+          {session?.user.email} · Email confirmed
         </ThemedText>
-        <Field label="Phone (optional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" />
-        <Field label="Instagram (optional)" value={instagram} onChangeText={setInstagram} autoCapitalize="none" />
-      </Card>
+      </View>
+
+      <Field label="First name" value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
+
+      <ThemedText type="smallBold">Contact info (private, optional)</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Only shared after a walk, and only with someone who also chooses to share with you.
+      </ThemedText>
+      <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" />
+      <Field label="Instagram" value={instagram} onChangeText={setInstagram} autoCapitalize="none" />
 
       <Card>
-        <ThemedText type="smallBold">3. Government ID</ThemedText>
+        <ThemedText type="smallBold">Verify your ID</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           A photo of the front of your driver&apos;s license, state ID or passport, plus a selfie so we can match them.
+          Only our review team sees these, never other students.
         </ThemedText>
         <View style={styles.idRow}>
-          <IdThumb label="ID front" image={idFront} />
-          <IdThumb label="Selfie" image={selfie} />
-        </View>
-        <View style={styles.buttonRow}>
-          <Button compact variant="secondary" title="Photograph ID" onPress={choose(setIdFront, { source: 'camera' })} />
-          <Button compact variant="secondary" title="Take selfie" onPress={choose(setSelfie, { source: 'camera', frontCamera: true })} />
+          <IdThumb label="ID front" image={idFront} onPress={choose(setIdFront, { source: 'camera' })} />
+          <IdThumb label="Selfie" image={selfie} onPress={choose(setSelfie, { source: 'camera', frontCamera: true })} />
         </View>
       </Card>
 
-      <ErrorText message={error} />
-      <Button title="Submit for verification" onPress={submit} loading={saving} disabled={!ready} />
-      <Button title="Sign out" variant="secondary" onPress={signOut} />
+      <Notice icon="lock-closed-outline">
+        Your first name and photo are shared with your assigned group. Your school email stays private.
+      </Notice>
     </Screen>
   );
 }
 
-function IdThumb({ label, image }: { label: string; image: PickedImage | null }) {
+function IdThumb({ label, image, onPress }: { label: string; image: PickedImage | null; onPress: () => void }) {
+  const theme = useTheme();
   return (
     <View style={styles.flex}>
       {image ? (
         <Image source={{ uri: image.uri }} style={styles.thumb} contentFit="cover" />
       ) : (
-        <View style={[styles.thumb, styles.thumbEmpty]} />
+        <View style={[styles.thumb, styles.thumbEmpty, { borderColor: theme.border, backgroundColor: theme.background }]}>
+          <Ionicons name={label === 'Selfie' ? 'happy-outline' : 'card-outline'} size={28} color={theme.textSecondary} />
+        </View>
       )}
-      <ThemedText type="small" themeColor="textSecondary">
-        {image ? `${label} ✓` : label}
-      </ThemedText>
+      <Button compact variant="secondary" icon="camera-outline" title={image ? `Retake ${label.toLowerCase()}` : label} onPress={onPress} />
     </View>
   );
 }
@@ -143,15 +167,34 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.one,
   },
-  avatarRow: {
+  center: {
+    textAlign: 'center',
+  },
+  photoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
+    gap: 14,
   },
-  buttonRow: {
+  cam: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  links: {
     flexDirection: 'row',
-    gap: Spacing.two,
-    flexWrap: 'wrap',
+    gap: Spacing.three,
+    marginTop: Spacing.one,
+  },
+  verified: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   idRow: {
     flexDirection: 'row',
@@ -159,11 +202,13 @@ const styles = StyleSheet.create({
   },
   thumb: {
     height: 96,
-    borderRadius: Spacing.two,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.one,
   },
   thumbEmpty: {
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: '#999',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
