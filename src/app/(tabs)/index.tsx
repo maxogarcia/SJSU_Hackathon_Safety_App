@@ -194,14 +194,18 @@ export default function WalkScreen() {
         </Card>
       )}
 
-      <ThemedText type="smallBold">1. Pick a safe meetup point</ThemedText>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        {points.map((p) => (
-          <Chip key={p.id} label={p.is_staffed ? `${p.name} · staffed` : p.name} selected={p.id === meetupId} onPress={() => selectMeetup(p.id)} />
-        ))}
+<ThemedText type="smallBold">1. Choose where to meet</ThemedText>
+<ThemedText type="small" themeColor="textSecondary">
+  Select a designated meetup spot, then tap the map to set where you are headed.
+  Check your selected meeting point before requesting a walking buddy.
+</ThemedText>
       </ScrollView>
 
-      <ThemedText type="smallBold">2. Tap the map where you&apos;re headed</ThemedText>
+     <ThemedText type="smallBold">2. Set your destination</ThemedText>
+<ThemedText type="small" themeColor="textSecondary">
+  Pack Track will look for students heading in a similar direction.
+  Choose a destination and departure time to get started.
+</ThemedText>
       <WalkMap pins={pins} route={route?.points} zones={mapZones} onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)} onMapPress={pickDestination} />
 
       {destination && (
