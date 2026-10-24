@@ -5,6 +5,9 @@
 import { supabase } from '@/lib/supabase';
 
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
+export type Gender = 'woman' | 'man' | 'nonbinary';
+/** Who you're willing to walk with. The database only accepts options your gender allows. */
+export type BuddyPref = 'anyone' | 'women_nonbinary' | 'women_only';
 
 export type Profile = {
   id: string;
@@ -12,6 +15,7 @@ export type Profile = {
   university: string | null;
   avatar_path: string | null;
   verification_status: VerificationStatus;
+  gender: Gender | null;
 };
 
 export type ContactInfo = {
@@ -35,9 +39,15 @@ export type MemberStatus = 'joined' | 'confirmed' | 'arrived' | 'left';
 export type GroupMember = {
   user_id: string;
   is_me: boolean;
+  /** Name and photo unlock once you've been within ~30 ft of each other (or started walking). */
+  revealed: boolean;
   first_name: string | null;
   avatar_path: string | null;
   status: MemberStatus;
+  /** Tapped "I'm here" at the meetup. */
+  is_here: boolean;
+  /** Rounded live distance from you in feet, while both phones are sharing. Never coordinates. */
+  distance_ft: number | null;
   split_order: number | null;
   split_lat: number | null;
   split_lng: number | null;
@@ -55,6 +65,7 @@ export type GroupDetails = {
   /** Path you walk with the group: your own route if anchor, else the anchor's route up to your split. */
   shared_route: [number, number][];
   my_destination: { label: string | null; lat: number; lng: number };
+  my_buddy_pref: BuddyPref;
   members: GroupMember[];
 };
 
@@ -85,7 +96,7 @@ async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, university, avatar_path, verification_status')
+    .select('id, first_name, university, avatar_path, verification_status, gender')
     .eq('id', userId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -127,6 +138,7 @@ export const createWalkRequest = (args: {
   destLabel: string;
   route: [number, number][];
   departAt: Date;
+  buddyPref: BuddyPref;
 }) =>
   rpc<string>('create_walk_request', {
     p_meetup_point_id: args.meetupPointId,
@@ -135,6 +147,7 @@ export const createWalkRequest = (args: {
     p_dest_label: args.destLabel,
     p_route: args.route,
     p_depart_at: args.departAt.toISOString(),
+    p_buddy_pref: args.buddyPref,
   });
 
 export const findOrCreateGroup = (requestId: string) =>
@@ -146,6 +159,14 @@ export const confirmGroup = (groupId: string) => rpc<void>('confirm_group', { p_
 export const startWalk = (groupId: string) => rpc<void>('start_walk', { p_group: groupId });
 export const leaveGroup = (groupId: string) => rpc<void>('leave_group', { p_group: groupId });
 export const markArrived = (groupId: string) => rpc<void>('mark_arrived', { p_group: groupId });
+
+/** Gender is set through this RPC only, and can't change during an active walk. */
+export const setMyGender = (gender: Gender) => rpc<void>('set_my_gender', { p_gender: gender });
+/** Shares your position with the server (never with other phones) so it can reveal buddies within ~30 ft. */
+export const updateMyPosition = (groupId: string, lat: number, lng: number, accuracy: number | null) =>
+  rpc<void>('update_my_position', { p_group: groupId, p_lat: lat, p_lng: lng, p_accuracy: accuracy });
+/** "I'm here": only works once you've been within ~30 ft of someone in your group. */
+export const markHere = (groupId: string) => rpc<void>('mark_here', { p_group: groupId });
 
 export const getShareStatus = (groupId: string) => rpc<ShareStatus[]>('get_share_status', { p_group: groupId });
 export const setContactShare = (groupId: string, toUser: string, share: boolean) =>

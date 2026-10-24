@@ -4,11 +4,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
+import { Logo, SparkleLoader, Tagline } from '@/components/brand';
+import { allowedBuddyPrefs, BuddyPrefPicker, GenderPicker } from '@/components/buddy-options';
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { ReportSheet } from '@/components/report-sheet';
@@ -20,7 +22,17 @@ import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
 import { useIncidents } from '@/hooks/use-incidents';
 import { useTheme } from '@/hooks/use-theme';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { createWalkRequest, findOrCreateGroup, getActiveGroup, leaveGroup, listMeetupPoints, type MeetupPoint } from '@/lib/api';
+import {
+  createWalkRequest,
+  findOrCreateGroup,
+  getActiveGroup,
+  leaveGroup,
+  listMeetupPoints,
+  setMyGender,
+  type BuddyPref,
+  type Gender,
+  type MeetupPoint,
+} from '@/lib/api';
 import { confirmAction } from '@/lib/confirm';
 import {
   formatDistance,
@@ -31,6 +43,7 @@ import {
 } from '@/lib/directions';
 import { blockingZones, CATEGORY_LABEL } from '@/lib/safety';
 import { routeSafest, type OpenAlongRoute } from '@/lib/liveliness';
+import { geocodeNearCampus, searchLocalPlaces, type PlaceResult } from '@/lib/place-search';
 import { useSession } from '@/providers/session';
 
 const DEPART_OPTIONS = [
@@ -53,12 +66,35 @@ export default function WalkScreen() {
   const [lively, setLively] = useState<{ open: OpenAlongRoute; brighter: boolean } | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [matching, setMatching] = useState(false);
+  const [buddyPref, setBuddyPref] = useState<BuddyPref>('anyone');
+  const [genderSaving, setGenderSaving] = useState(false);
+  // Destination search bar.
+  const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const suggestions = useMemo(() => searchLocalPlaces(query, 4), [query]);
   const [error, setError] = useState<string | null>(null);
   const [avoiding, setAvoiding] = useState<string[]>([]);
   const [reportOpen, setReportOpen] = useState(false);
   const { zones, incidents } = useIncidents();
 
   const verified = profile?.verification_status === 'verified';
+  // Only offer (and send) a buddy option this person's gender allows; the database enforces the same rule.
+  const effectiveBuddyPref: BuddyPref = allowedBuddyPrefs(profile?.gender).includes(buddyPref) ? buddyPref : 'anyone';
+
+  const chooseGender = async (gender: Gender) => {
+    setGenderSaving(true);
+    setError(null);
+    try {
+      await setMyGender(gender);
+      await refreshProfile();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGenderSaving(false);
+    }
+  };
   const meetupIndex = points.findIndex((p) => p.id === meetupId);
   const meetup = points[meetupIndex] ?? null;
 
@@ -128,11 +164,14 @@ export default function WalkScreen() {
     updateRoute(points.find((p) => p.id === id) ?? null, destination);
   };
 
-  const pickDestination = async (coordinate: LatLng) => {
+  const pickDestination = async (coordinate: LatLng, label?: string) => {
+    setSearchOpen(false);
+    setSearchError(null);
     setDestination(coordinate);
-    setDestLabel('Dropped pin');
+    setDestLabel(label ?? 'Dropped pin');
     setError(null);
     updateRoute(meetup, coordinate);
+    if (label) return; // picked from search: we already have a good name
     try {
       const [place] = await Location.reverseGeocodeAsync(coordinate);
       if (place) setDestLabel([place.streetNumber, place.street].filter(Boolean).join(' ') || place.name || 'Dropped pin');
@@ -141,7 +180,34 @@ export default function WalkScreen() {
     }
   };
 
+  const choosePlace = (place: PlaceResult) => {
+    Keyboard.dismiss();
+    setQuery('');
+    pickDestination({ latitude: place.latitude, longitude: place.longitude }, place.name);
+  };
+
+  // Pressing search (or "Search this address") looks up any street address near campus.
+  const searchAddress = async () => {
+    const q = query.trim();
+    if (q.length < 3) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const found = await geocodeNearCampus(q);
+      if (found) choosePlace(found);
+      else if (suggestions[0]) choosePlace(suggestions[0]);
+      else setSearchError('Couldn’t find that near campus. Try another name or address, or tap the map.');
+    } catch {
+      if (suggestions[0]) choosePlace(suggestions[0]);
+      else setSearchError('Address search isn’t available right now. Pick a suggestion or tap the map.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const clearDestination = () => {
+    setQuery('');
+    setSearchError(null);
     routeRequest.current++;
     setDestination(null);
     setRoute(null);
@@ -161,6 +227,7 @@ export default function WalkScreen() {
         destLabel,
         route: toGeoJsonCoordinates(route.points),
         departAt: minutesFromNow(departIn),
+        buddyPref: effectiveBuddyPref,
       });
       const groupId = await findOrCreateGroup(requestId);
       router.push({ pathname: '/group/[id]', params: { id: groupId } });
@@ -207,8 +274,9 @@ export default function WalkScreen() {
       <SafeAreaView edges={['top']} style={styles.flex}>
         <View style={styles.head}>
           <View style={styles.flex}>
+            <Logo size={18} />
             <ThemedText style={styles.h1}>Hey, {profile?.first_name ?? 'Spartan'} 👋</ThemedText>
-            <ThemedText themeColor="textSecondary">Your next walk starts here.</ThemedText>
+            <Tagline />
           </View>
           <Pressable onPress={() => router.navigate('/profile')}>
             <Avatar path={profile?.avatar_path} name={profile?.first_name} size={40} />
@@ -224,7 +292,10 @@ export default function WalkScreen() {
               height={330}
               rounded={false}
               onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)}
-              onMapPress={pickDestination}
+              onMapPress={(c) => {
+                Keyboard.dismiss();
+                pickDestination(c);
+              }}
             />
             <View pointerEvents="box-none" style={styles.overlay}>
               <ThemedView type="backgroundElement" style={[styles.search, { shadowColor: theme.text }]}>
@@ -233,16 +304,58 @@ export default function WalkScreen() {
                   <ThemedText themeColor="textSecondary" style={styles.searchLabel}>
                     WALKING TOWARD
                   </ThemedText>
-                  <ThemedText numberOfLines={1} style={styles.searchValue}>
-                    {destination ? destLabel : 'Tap the map where you’re headed'}
-                  </ThemedText>
+                  <TextInput
+                    value={query}
+                    onChangeText={(t) => {
+                      setQuery(t);
+                      setSearchOpen(true);
+                      setSearchError(null);
+                    }}
+                    onFocus={() => setSearchOpen(true)}
+                    onSubmitEditing={searchAddress}
+                    placeholder={destination ? destLabel : 'Search a place or address, or tap the map'}
+                    placeholderTextColor={destination ? theme.text : theme.textSecondary}
+                    returnKeyType="search"
+                    autoCorrect={false}
+                    accessibilityLabel="Search for your destination"
+                    style={[styles.searchValue, styles.searchInput, { color: theme.text }]}
+                  />
                 </View>
-                {destination && (
+                {(destination || query.length > 0) && (
                   <ThemedText type="smallBold" themeColor="accent" onPress={clearDestination}>
                     Clear
                   </ThemedText>
                 )}
               </ThemedView>
+              {searchOpen && query.trim().length >= 2 && (
+                <ThemedView type="backgroundElement" style={[styles.results, { shadowColor: theme.text, borderColor: theme.border }]}>
+                  {suggestions.map((p) => (
+                    <Pressable key={p.id} accessibilityRole="button" onPress={() => choosePlace(p)} style={styles.resultRow}>
+                      <Ionicons name={p.detail === 'SJSU campus' ? 'school-outline' : 'location-outline'} size={18} color={theme.accent} />
+                      <View style={styles.flex}>
+                        <ThemedText numberOfLines={1} type="smallBold">
+                          {p.name}
+                        </ThemedText>
+                        <ThemedText numberOfLines={1} type="small" themeColor="textSecondary">
+                          {p.detail}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                  ))}
+                  <Pressable accessibilityRole="button" onPress={searchAddress} style={styles.resultRow}>
+                    <Ionicons name="search-outline" size={18} color={theme.accent} />
+                    <ThemedText numberOfLines={1} type="small" style={styles.flex}>
+                      Search this address: “{query.trim()}”
+                    </ThemedText>
+                    {searching && <ActivityIndicator size="small" color={theme.accent} />}
+                  </Pressable>
+                  {searchError && (
+                    <ThemedText type="small" themeColor="danger" style={styles.resultNote}>
+                      {searchError}
+                    </ThemedText>
+                  )}
+                </ThemedView>
+              )}
             </View>
           </View>
 
@@ -256,7 +369,7 @@ export default function WalkScreen() {
                   You have a walk in progress.
                 </ThemedText>
                 <Button
-                  title="View your pack"
+                  title="View your walk"
                   icon="people-outline"
                   onPress={() => router.push({ pathname: '/group/[id]', params: { id: activeGroup } })}
                 />
@@ -341,14 +454,29 @@ export default function WalkScreen() {
               ))}
             </View>
 
+            <ThemedText type="smallBold" themeColor="accent" style={styles.eyebrow}>
+              ● WALK WITH
+            </ThemedText>
+            {profile?.gender ? (
+              <BuddyPrefPicker gender={profile.gender} value={effectiveBuddyPref} onChange={setBuddyPref} />
+            ) : (
+              <>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Add your gender to see buddy options like women only. It&apos;s used for matching and never shown to other
+                  students.
+                </ThemedText>
+                <GenderPicker value={null} onChange={chooseGender} disabled={genderSaving} />
+              </>
+            )}
+
             <ErrorText message={error} />
             <Button
               title={findButtonTitle({ verified, hasActiveGroup: !!activeGroup, hasDestination: !!destination, routeLoading, hasRoute: !!route })}
-              icon="people-outline"
+              icon="sparkles"
               onPress={findBuddies}
-              loading={matching}
-              disabled={!verified || !route || !!activeGroup}
+              disabled={!verified || !route || !!activeGroup || matching}
             />
+            {matching && <SparkleLoader />}
 
             <Card>
               <ThemedText type="smallBold">
@@ -390,7 +518,7 @@ function findButtonTitle(s: {
   if (!s.hasDestination) return 'Tap the map to set your destination';
   if (s.routeLoading) return 'Finding a walking route…';
   if (!s.hasRoute) return 'No route found — try another spot';
-  return 'Find your pack';
+  return 'Find your sparkle';
 }
 
 function minutesFromNow(minutes: number) {
@@ -443,6 +571,31 @@ const styles = StyleSheet.create({
   searchValue: {
     fontSize: 15,
     fontWeight: '500',
+  },
+  searchInput: {
+    paddingVertical: 2,
+    paddingHorizontal: 0,
+  },
+  results: {
+    marginTop: 6,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    paddingVertical: 4,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  resultNote: {
+    paddingHorizontal: 14,
+    paddingBottom: 8,
   },
   sheet: {
     paddingHorizontal: 20,

@@ -1,3 +1,5 @@
+import { AbrilFatface_400Regular } from '@expo-google-fonts/abril-fatface';
+import { useFonts } from 'expo-font';
 import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
@@ -21,12 +23,15 @@ export default function RootLayout() {
 function RootNavigator() {
   const { session, profile, isLoading } = useSession();
   const theme = useTheme();
+  // The "firefly." wordmark font. If it fails to load, the logo falls back to the system font.
+  const [fontsLoaded, fontError] = useFonts({ AbrilFatface_400Regular });
+  const ready = !isLoading && (fontsLoaded || !!fontError);
 
   useEffect(() => {
-    if (!isLoading) SplashScreen.hideAsync();
-  }, [isLoading]);
+    if (ready) SplashScreen.hideAsync();
+  }, [ready]);
 
-  if (isLoading) return null;
+  if (!ready) return null;
 
   const signedIn = !!session;
   const onboarded = isOnboarded(profile);

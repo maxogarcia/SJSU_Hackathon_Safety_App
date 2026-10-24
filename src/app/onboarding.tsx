@@ -5,12 +5,14 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
+import { Logo, Tagline } from '@/components/brand';
+import { GenderPicker } from '@/components/buddy-options';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Notice, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { submitIdVerification, updateContactInfo, updateProfile } from '@/lib/api';
+import { setMyGender, submitIdVerification, updateContactInfo, updateProfile, type Gender } from '@/lib/api';
 import { pickImage, uploadImage, type PickedImage } from '@/lib/images';
 import { useSession } from '@/providers/session';
 
@@ -18,6 +20,7 @@ export default function OnboardingScreen() {
   const theme = useTheme();
   const { session, profile, refreshProfile, signOut } = useSession();
   const [firstName, setFirstName] = useState(profile?.first_name ?? '');
+  const [gender, setGender] = useState<Gender | null>(profile?.gender ?? null);
   const [phone, setPhone] = useState('');
   const [instagram, setInstagram] = useState('');
   const [avatar, setAvatar] = useState<PickedImage | null>(null);
@@ -27,7 +30,7 @@ export default function OnboardingScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const userId = session?.user.id;
-  const ready = !!firstName.trim() && (!!avatar || !!profile?.avatar_path) && !!idFront && !!selfie;
+  const ready = !!firstName.trim() && !!gender && (!!avatar || !!profile?.avatar_path) && !!idFront && !!selfie;
 
   const choose = (setter: (img: PickedImage) => void, opts: Parameters<typeof pickImage>[0]) => async () => {
     try {
@@ -39,7 +42,7 @@ export default function OnboardingScreen() {
   };
 
   const submit = async () => {
-    if (!userId || !idFront || !selfie) return;
+    if (!userId || !idFront || !selfie || !gender) return;
     setSaving(true);
     setError(null);
     try {
@@ -51,6 +54,7 @@ export default function OnboardingScreen() {
       const selfiePath = await uploadImage('id-documents', `${userId}/selfie-${stamp}.jpg`, selfie);
 
       await updateProfile(userId, { first_name: firstName.trim(), avatar_path: avatarPath });
+      if (gender !== profile?.gender) await setMyGender(gender);
       await updateContactInfo(userId, {
         phone: phone.trim() || null,
         instagram: instagram.trim().replace(/^@/, '') || null,
@@ -73,13 +77,17 @@ export default function OnboardingScreen() {
           <ErrorText message={error} />
           <Button title="Save profile and submit ID" onPress={submit} loading={saving} disabled={!ready} />
           <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-            First name, a profile photo, your ID and a selfie are required.{' '}
+            First name, gender, a profile photo, your ID and a selfie are required.{' '}
             <ThemedText type="small" themeColor="accent" onPress={signOut}>
               Sign out
             </ThemedText>
           </ThemedText>
         </>
       }>
+      <View style={styles.brandRow}>
+        <Logo size={22} />
+        <Tagline />
+      </View>
       {profile?.verification_status === 'rejected' && (
         <Card>
           <ThemedText type="smallBold" themeColor="danger">
@@ -98,7 +106,7 @@ export default function OnboardingScreen() {
         <View style={styles.flex}>
           <ThemedText type="smallBold">Profile photo · Required</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            Help your pack recognize you. Use a clear photo of your face. Only people in a group you both confirmed see it.
+            Help your buddy recognize you. Use a clear photo of your face. It only unlocks for buddies once you&apos;re within about 30 feet of each other.
           </ThemedText>
           <View style={styles.links}>
             <ThemedText type="smallBold" themeColor="accent" onPress={choose(setAvatar, { source: 'camera', square: true, frontCamera: true })}>
@@ -120,6 +128,13 @@ export default function OnboardingScreen() {
 
       <Field label="First name" value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
 
+      <ThemedText type="smallBold">Gender · Required</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Used for buddy matching. Women can choose to walk only with women, and women and non-binary students can choose
+        to walk only with women and non-binary students. Never shown to other students.
+      </ThemedText>
+      <GenderPicker value={gender} onChange={setGender} />
+
       <ThemedText type="smallBold">Contact info (private, optional)</ThemedText>
       <ThemedText type="small" themeColor="textSecondary">
         Only shared after a walk, and only with someone who also chooses to share with you.
@@ -140,7 +155,7 @@ export default function OnboardingScreen() {
       </Card>
 
       <Notice icon="lock-closed-outline">
-        Your first name and photo are shared with your assigned group. Your school email stays private.
+        Until you meet, buddies only see that you&apos;re a verified SJSU student. Your first name and photo unlock when you&apos;re within about 30 feet of each other. Your school email stays private.
       </Notice>
     </Screen>
   );
@@ -163,6 +178,7 @@ function IdThumb({ label, image, onPress }: { label: string; image: PickedImage 
 }
 
 const styles = StyleSheet.create({
+  brandRow: { gap: 4 },
   flex: {
     flex: 1,
     gap: Spacing.one,

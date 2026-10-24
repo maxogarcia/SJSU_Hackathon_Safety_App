@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Vibration, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
+import { SparkleLoader } from '@/components/brand';
 import { Button } from '@/components/button';
 import { ReportSheet } from '@/components/report-sheet';
 import { Card, ErrorText, Screen } from '@/components/screen';
@@ -24,7 +25,9 @@ import {
   getGroupDetails,
   leaveGroup,
   markArrived,
+  markHere,
   startWalk,
+  updateMyPosition,
   updateMyRoute,
   type GroupDetails,
   type GroupMember,
@@ -45,7 +48,8 @@ import { confirmAction } from '@/lib/confirm';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session';
 
-type LiveWalker = { user_id: string; first_name: string | null; lat: number; lng: number; at: number };
+// No names in live updates: names come from get_group_details, and only after the ~30 ft reveal.
+type LiveWalker = { user_id: string; lat: number; lng: number; at: number };
 
 const MEMBER_STATUS: Record<MemberStatus, { label: string; color: ThemeColor }> = {
   joined: { label: 'Reviewing', color: 'warning' },
@@ -57,7 +61,7 @@ const MEMBER_STATUS: Record<MemberStatus, { label: string; color: ThemeColor }> 
 export default function GroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
-  const { session, profile } = useSession();
+  const { session } = useSession();
   const [group, setGroup] = useState<GroupDetails | null>(null);
   const [walkers, setWalkers] = useState<Record<string, LiveWalker>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -91,6 +95,40 @@ export default function GroupScreen() {
   const me = group?.members.find((m) => m.is_me);
   const isWalking = group?.status === 'walking';
   const shareMyLocation = isWalking && me?.status === 'confirmed';
+
+  // Reveal at ~30 ft: while you're confirmed in an active group, send your position to the server
+  // (never to other phones). The server reveals names and photos to buddies within ~30 ft, and returns
+  // only a rounded distance until then. Refresh the details at most every few seconds.
+  const sharesPositionForReveal = !!group && me?.status === 'confirmed' && (group.status === 'forming' || group.status === 'walking');
+  const lastRevealLoad = useRef(0);
+  useEffect(() => {
+    if (!sharesPositionForReveal) return;
+    let cancelled = false;
+    let watcher: Location.LocationSubscription | null = null;
+    (async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted || cancelled) return;
+      watcher = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 4000, distanceInterval: 2 },
+        (pos) => {
+          myPosition.current = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          updateMyPosition(id, pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? null)
+            .then(() => {
+              if (Date.now() - lastRevealLoad.current > 4000) {
+                lastRevealLoad.current = Date.now();
+                load();
+              }
+            })
+            .catch(() => {});
+        }
+      );
+      if (cancelled) watcher.remove();
+    })();
+    return () => {
+      cancelled = true;
+      watcher?.remove();
+    };
+  }, [sharesPositionForReveal, id, load]);
 
   // After your split point you walk home alone; fetch a real walking route for that leg.
   // (Anchors already have their full route in shared_route.) The solo leg is private to this phone,
@@ -154,7 +192,6 @@ export default function GroupScreen() {
             event: 'location',
             payload: {
               user_id: session.user.id,
-              first_name: profile?.first_name ?? null,
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
               at: Date.now(),
@@ -170,7 +207,7 @@ export default function GroupScreen() {
       watcher?.remove();
       supabase.removeChannel(channel);
     };
-  }, [id, isWalking, shareMyLocation, session, profile?.first_name]);
+  }, [id, isWalking, shareMyLocation, session]);
 
   // Rerouting the shared path. The group walks the anchor's route, and only the anchor's phone knows
   // where it ends (routes are private), so the anchor's phone finds a way around a reported problem and
@@ -282,7 +319,7 @@ export default function GroupScreen() {
       .filter((m) => m.split_lat != null && m.split_lng != null && others.length > 0)
       .map<MapPin>((m) => ({
         id: `split-${m.user_id}`,
-        title: m.is_me ? 'You head off here' : `${m.first_name ?? 'Walker'} heads off here`,
+        title: m.is_me ? 'You head off here' : `${m.first_name ?? 'Your buddy'} heads off here`,
         latitude: m.split_lat!,
         longitude: m.split_lng!,
         kind: m.is_me ? 'my-split' : 'split',
@@ -291,7 +328,7 @@ export default function GroupScreen() {
       .filter((w) => w.user_id !== session?.user.id)
       .map<MapPin>((w) => ({
         id: `walker-${w.user_id}`,
-        title: w.first_name ?? 'Walker',
+        title: group.members.find((m) => m.user_id === w.user_id)?.first_name ?? 'Your buddy',
         description: `Updated ${new Date(w.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
         latitude: w.lat,
         longitude: w.lng,
@@ -363,8 +400,18 @@ export default function GroupScreen() {
         </ThemedText>
       )}
 
+      {group.status === 'forming' && others.length === 0 && (
+        <Card>
+          <SparkleLoader />
+          <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
+            We&apos;ll match you with a verified SJSU student heading your way. Head to {group.meetup_point.name} when it&apos;s
+            time.
+          </ThemedText>
+        </Card>
+      )}
+
       <View style={styles.rowBetween}>
-        <ThemedText type="smallBold">Get to know your pack</ThemedText>
+        <ThemedText type="smallBold">Your walking buddies</ThemedText>
         <ThemedText type="small" themeColor="success">
           ID verified students
         </ThemedText>
@@ -374,14 +421,26 @@ export default function GroupScreen() {
           <MemberTile key={m.user_id} member={m} showOrder={others.length > 0} />
         ))}
       </View>
+      {others.length > 0 && group.status === 'forming' && (
+        <ThemedText type="small" themeColor="textSecondary">
+          {others.some((m) => m.revealed)
+            ? 'You found each other! Tap "I\'m here" so your buddy knows.'
+            : "For privacy, you'll see your buddy's name and photo once you're within about 30 feet of each other. Until then, it's a verified SJSU student."}
+        </ThemedText>
+      )}
 
       {group.status === 'forming' && me.status === 'joined' && (
         <>
           <ThemedText type="small" themeColor="textSecondary">
-            Confirming shares your profile photo with this group only, and you&apos;ll see theirs once they confirm too.
+            Confirming lets your group see roughly how far away you are, never your exact location. Names and photos
+            unlock when you&apos;re within about 30 feet of each other.
           </ThemedText>
-          <Button title="Confirm and share my photo" icon="checkmark" loading={busy === 'confirm'} onPress={run('confirm', () => confirmGroup(id))} />
+          <Button title="Confirm my walk" icon="checkmark" loading={busy === 'confirm'} onPress={run('confirm', () => confirmGroup(id))} />
         </>
+      )}
+
+      {group.status === 'forming' && me.status === 'confirmed' && others.some((m) => m.revealed) && !me.is_here && (
+        <Button title="I'm here" icon="hand-left-outline" loading={busy === 'here'} onPress={run('here', () => markHere(id))} />
       )}
 
       {group.status === 'forming' && me.status === 'confirmed' && (
@@ -465,9 +524,9 @@ function BackLink() {
 function headline(group: GroupDetails, otherCount: number) {
   switch (group.status) {
     case 'forming':
-      return otherCount === 0 ? 'Finding your pack…' : 'Your pack is assigned';
+      return otherCount === 0 ? 'Your walk is set' : 'You matched!';
     case 'walking':
-      return 'Walking with your pack';
+      return 'Walking together';
     case 'completed':
       return 'Everyone made it home';
     case 'cancelled':
@@ -476,16 +535,29 @@ function headline(group: GroupDetails, otherCount: number) {
 }
 
 function MemberTile({ member, showOrder }: { member: GroupMember; showOrder: boolean }) {
+  const theme = useTheme();
   const status = MEMBER_STATUS[member.status];
+  const hidden = !member.is_me && !member.revealed;
   return (
     <View style={styles.member}>
-      <Avatar path={member.avatar_path} name={member.first_name} size={52} />
+      {hidden ? (
+        <View style={[styles.hiddenAvatar, { backgroundColor: theme.amberSoft }]}>
+          <Ionicons name="sparkles" size={22} color={theme.navy} />
+        </View>
+      ) : (
+        <Avatar path={member.avatar_path} name={member.first_name} size={52} />
+      )}
       <ThemedText type="smallBold" numberOfLines={1}>
-        {member.first_name ?? 'Walker'}
+        {member.is_me ? member.first_name ?? 'You' : hidden ? 'SJSU student' : member.first_name ?? 'Your buddy'}
       </ThemedText>
       <ThemedText type="small" themeColor={member.is_me ? 'textSecondary' : status.color} style={styles.tiny}>
-        {member.is_me ? `You · ${status.label}` : status.label}
+        {member.is_me ? `You · ${status.label}` : member.is_here ? "Here ✓" : status.label}
       </ThemedText>
+      {!member.is_me && member.distance_ft != null && member.status !== 'arrived' && (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.tiny}>
+          {member.distance_ft <= 30 ? 'Right here' : `About ${member.distance_ft.toLocaleString()} ft away`}
+        </ThemedText>
+      )}
       {showOrder && member.split_order != null && (
         <ThemedText type="small" themeColor="textSecondary" style={styles.tiny}>
           Heads off {ordinal(member.split_order)}
@@ -502,6 +574,16 @@ function ordinal(n: number) {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  center: {
+    textAlign: 'center',
+  },
+  hiddenAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   back: {
     width: 40,

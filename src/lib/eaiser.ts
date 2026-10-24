@@ -115,7 +115,7 @@ const RULES: { category: IncidentCategory; issueType: string; title: string; wor
 ];
 
 // Approximate SJSU building positions, only for labelling simulated results.
-const BUILDINGS: (LatLng & { name: string })[] = [
+export const BUILDINGS: (LatLng & { name: string })[] = [
   { name: 'Dr. Martin Luther King Jr. Library', latitude: 37.33553, longitude: -121.88502 },
   { name: 'Student Union', latitude: 37.33525, longitude: -121.8812 },
   { name: 'Engineering Building', latitude: 37.33711, longitude: -121.8818 },

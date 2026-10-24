@@ -1,4 +1,6 @@
-# PackTrack
+# Firefly
+
+*find your sparkle* — formerly PackTrack.
 
 Pairs verified university students so nobody walks home from campus alone. Students meet at a safe meetup point, get matched with others heading the same way, walk together, and each person peels off at the point closest to their own destination.
 
@@ -11,6 +13,17 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 5. **Confirm**: confirming shares your profile photo with that group only. You see someone's photo once you've both confirmed.
 6. **Walk**: the group follows one shared path, and each person peels off at the point closest to their home. For privacy, splits happen at least ~100 m before anyone's home. Live locations are shared over a private Realtime channel only group members can join. SafeWalk call/text and 911 buttons are always on screen.
 7. **After the walk**: everyone taps "I'm home safe." Then each person can choose who to share contact info with. Info is revealed only when both people opt in.
+
+## Firefly update (migration 0006)
+
+Run `supabase/migrations/0006_firefly_buddies_and_reveal.sql` in the Supabase SQL Editor after 0005.
+
+- **Women's buddy system.** Students pick a gender (Woman, Man, Non-binary) in onboarding or Profile. When planning a walk they choose who to walk with: **Anyone**, **Women and non-binary** (for women and non-binary students) or **Women only** (only for students who selected Woman). Matching respects every member's choice in both directions.
+- **Reveal at ~30 ft.** Until you meet, buddies only see "SJSU student", their status, the meetup point and a rounded distance ("About 120 ft away"). Names and photos unlock when both phones are within about 30 ft, or when the walk starts. Then **I'm here** becomes available. Exact positions never reach other phones and are deleted after the walk.
+- **Smarter matching.** The team's Python walking-buddy scorer (`match_score.py`) is now built into `find_or_create_group`: among groups that pass the safety limits, the best one wins on shared walk (30%), destination closeness (20%), detour (30%), departure time (10%) and waiting time (10%). The separate Python service is no longer needed.
+- **Branding.** Firefly logo (Abril Fatface + firefly mark), "find your sparkle" tagline, a "searching for your sparkle" loader with twinkling sparkles, and navy in place of every blue.
+
+Database tests (needs Postgres + PostGIS): run `00_supabase_stubs.sql`, all migrations, then `scenario.sql`, `incidents.sql` and `firefly.sql`, each in a fresh database.
 
 ## Reports, danger zones and rerouting
 

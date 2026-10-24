@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Logo, Tagline } from '@/components/brand';
 import { Button } from '@/components/button';
 import { ErrorText, Field, Notice } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
@@ -77,10 +78,8 @@ export default function SignInScreen() {
           <View style={[styles.hero, { backgroundColor: theme.navy }]}>
             <SafeAreaView edges={['top']}>
               <View style={styles.brand}>
-                <View style={[styles.logo, { backgroundColor: theme.amber }]}>
-                  <Ionicons name="footsteps" size={20} color={theme.navy} />
-                </View>
-                <ThemedText style={styles.brandText}>pack track</ThemedText>
+                <Logo size={26} light />
+                <Tagline light />
               </View>
             </SafeAreaView>
             <View style={styles.illus}>
@@ -94,7 +93,7 @@ export default function SignInScreen() {
               </View>
               <View style={styles.chip}>
                 <ThemedText type="small" style={styles.chipText}>
-                  Better with a pack.
+                  Better with a buddy.
                 </ThemedText>
               </View>
             </View>
@@ -180,18 +179,16 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { flexGrow: 1 },
-  hero: { height: 340, paddingHorizontal: 20 },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 },
-  logo: { width: 32, height: 32, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
-  brandText: { color: '#fff', fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  hero: { height: 360, paddingHorizontal: 20 },
+  brand: { gap: 6, marginTop: 20 },
   illus: { flex: 1, width: 300, alignSelf: 'center' },
   frame: { position: 'absolute', left: 46, top: 28, width: 200, height: 110, borderWidth: 4, borderRadius: Radius.sm },
-  card: { position: 'absolute', left: 130, top: 62, width: 110, height: 90, backgroundColor: '#25517A', borderRadius: Radius.md },
+  card: { position: 'absolute', left: 130, top: 62, width: 110, height: 90, backgroundColor: '#0F2D52', borderRadius: Radius.md },
   avatar: { position: 'absolute', left: 212, top: 40, width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   stepCircle: { position: 'absolute', left: 34, top: 100, width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   chip: { position: 'absolute', left: 143, top: 120, backgroundColor: '#fff', borderRadius: Radius.sm, paddingHorizontal: 12, paddingVertical: 8 },
   chipText: { fontSize: 12, color: '#172B40' },
-  uni: { color: '#C3D3DD', fontSize: 11, letterSpacing: 0.5, marginBottom: 14 },
+  uni: { color: '#D5DCE5', fontSize: 11, letterSpacing: 0.5, marginBottom: 14 },
   body: { flex: 1, padding: 20, gap: Spacing.three, width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center' },
   title: { fontSize: 30, fontWeight: '700', lineHeight: 36 },
   center: { textAlign: 'center' },

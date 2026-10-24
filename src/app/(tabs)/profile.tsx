@@ -5,12 +5,14 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
+import { Logo, Tagline } from '@/components/brand';
+import { GenderPicker } from '@/components/buddy-options';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Notice, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing, type ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { fetchContactInfo, updateContactInfo, updateProfile, type VerificationStatus } from '@/lib/api';
+import { fetchContactInfo, setMyGender, updateContactInfo, updateProfile, type Gender, type VerificationStatus } from '@/lib/api';
 import { pickImage, uploadImage } from '@/lib/images';
 import { useSession } from '@/providers/session';
 
@@ -44,6 +46,21 @@ export default function ProfileScreen() {
       })
       .catch((e: Error) => setError(e.message));
   }, [userId]);
+
+  const [genderSaving, setGenderSaving] = useState(false);
+  const changeGender = async (gender: Gender) => {
+    if (gender === profile?.gender) return;
+    setGenderSaving(true);
+    setError(null);
+    try {
+      await setMyGender(gender);
+      await refreshProfile();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGenderSaving(false);
+    }
+  };
 
   const changePhoto = async () => {
     if (!userId) return;
@@ -98,7 +115,7 @@ export default function ProfileScreen() {
         <View style={styles.flex}>
           <ThemedText type="smallBold">Profile photo · Required</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            Help your pack recognize you. Use a clear photo of your face.
+            Help your buddy recognize you. Use a clear photo of your face. It unlocks for buddies within about 30 feet.
           </ThemedText>
           <ThemedText type="smallBold" themeColor="accent" onPress={changePhoto}>
             Change photo
@@ -114,6 +131,11 @@ export default function ProfileScreen() {
       </View>
 
       <Field label="First name" value={firstName} onChangeText={setFirstName} autoComplete="given-name" />
+      <ThemedText type="smallBold">Gender</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Used for buddy matching and never shown to other students. You can&apos;t change it during an active walk.
+      </ThemedText>
+      <GenderPicker value={profile?.gender} onChange={changeGender} disabled={genderSaving} />
       <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
       <Field label="Instagram" value={instagram} onChangeText={setInstagram} autoCapitalize="none" />
 
@@ -126,11 +148,16 @@ export default function ProfileScreen() {
       <Button title={saved ? 'Saved' : 'Save profile'} onPress={save} loading={saving} />
       <Button title="Campus safety dashboard" icon="stats-chart-outline" variant="secondary" onPress={() => router.push('/admin')} />
       <Button title="Sign out" icon="log-out-outline" variant="secondary" onPress={signOut} />
+      <View style={styles.footerBrand}>
+        <Logo size={18} />
+        <Tagline size={13} />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  footerBrand: { alignItems: 'center', gap: 4, marginTop: Spacing.three },
   flex: {
     flex: 1,
     gap: Spacing.one,

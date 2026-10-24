@@ -90,7 +90,7 @@ export function Field({ label, style, ...props }: TextInputProps & { label: stri
   );
 }
 
-/** Light-blue info box with an icon (privacy notes, disclaimers). */
+/** Soft navy-tint info box with an icon (privacy notes, disclaimers). */
 export function Notice({ icon, children }: PropsWithChildren<{ icon: keyof typeof Ionicons.glyphMap }>) {
   const theme = useTheme();
   return (

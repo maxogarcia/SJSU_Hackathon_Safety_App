@@ -1,6 +1,6 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
-# PackTrack — project guide for agents
+# Firefly (formerly PackTrack) — project guide for agents
 
 PackTrack pairs verified university students so they can walk home from campus together. Students meet at a safe meetup point, get matched with others heading the same way, walk as a group, and each person peels off at the point closest to their own destination. Human-facing setup docs are in `README.md`; this section is the context an agent needs before changing code.
 
@@ -11,10 +11,11 @@ These are the core promises of the app. Every change must keep them true, and th
 1. **Only `.edu` emails can sign up.** Enforced by the `enforce_edu_email` trigger on `auth.users`. The client check in `sign-in.tsx` is only for a nicer error message. **Temporary exception (first draft):** addresses in `public.test_email_allowlist` (migration 0005, mirrored by `TEST_EMAILS` in `sign-in.tsx`) may also sign up, for testing. Those test accounts also have a shared password set directly in `auth.users` and skip the email link (password box in `sign-in.tsx`). Empty the allowlist, `TEST_EMAILS` and the password sign-in before launch.
 2. **No matching until a government ID is verified.** `create_walk_request` and `find_or_create_group` require `profiles.verification_status = 'verified'`. Users can't change that column (column-level `grant update (first_name, avatar_path)`); only `review_id_verification(email, approved)` can, and app users can't call it.
 3. **ID photos are never readable by other students.** The `id-documents` bucket has an insert policy for the owner's own folder and **no select policy**.
-4. **Destinations and routes are private.** `walk_requests` is select-own only. Other group members see only first name, status, split point and split order (via `get_group_details`).
-5. **Profile photos are shared only within a group both people confirmed.** Enforced by the avatars storage select policy, using `shares_confirmed_group()`. `get_group_details` also hides `avatar_path` until then.
+4. **Destinations and routes are private.** `walk_requests` is select-own only. Other group members see only status, split point, split order and a rounded distance (via `get_group_details`); first name and photo only after the reveal (rule 5).
+5. **Names and photos unlock only within ~30 ft (migration 0006).** Two confirmed members are revealed to each other when the server sees their fresh positions within 9.1 m (`update_my_position`), or when the walk starts. Until then `get_group_details` returns `first_name`/`avatar_path` as null, and the avatars storage policy (`is_revealed_to_me()`) blocks the photo. Raw positions live in `member_positions`, which no client can read, and are deleted when a member leaves/arrives or the group ends. "I'm here" (`mark_here`) only works after a reveal.
 6. **Contact info is shared only when both people opt in after a completed walk.** `contact_info` is select-own only; other people's contact details only come back from `get_share_status` / `get_mutual_contacts` when both `contact_shares` rows exist.
-7. **Live location goes only to group members.** It uses a *private* Realtime broadcast channel `group:<group_id>`, gated by policies on `realtime.messages`.
+7. **Live location goes only to group members.** It uses a *private* Realtime broadcast channel `group:<group_id>`, gated by policies on `realtime.messages`. Broadcasts carry no names.
+8. **Buddy preferences are enforced in the database (migration 0006).** `profiles.gender` is set only via `set_my_gender` (locked during an active walk). `women_only` is allowed only for gender `woman`; `women_nonbinary` only for `woman`/`nonbinary`. `find_or_create_group` only joins groups where every member satisfies every other member's preference (`buddies_compatible`).
 
 If a feature seems to need loosening one of these, stop and ask the team instead of working around it.
 

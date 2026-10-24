@@ -6,16 +6,16 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
-// Palette from the Pack Track Figma export (SJSU navy / blue / gold).
+// Firefly palette (from the Figma export), with every blue replaced by navy.
 export const Colors = {
   light: {
     text: '#172B40',
     background: '#F5F7FA',
     backgroundElement: '#FFFFFF',
-    backgroundSelected: '#EAF2FA',
+    backgroundSelected: '#E8EDF3',
     textSecondary: '#647487',
     border: '#DFE6ED',
-    accent: '#0055A2',
+    accent: '#073767',
     onAccent: '#FFFFFF',
     navy: '#073767',
     amber: '#E5A823',
@@ -28,11 +28,11 @@ export const Colors = {
     text: '#F2F5F8',
     background: '#0B1622',
     backgroundElement: '#14212F',
-    backgroundSelected: '#1C3550',
+    backgroundSelected: '#1B2633',
     textSecondary: '#9FB0C2',
     border: '#26384B',
-    accent: '#5AA7F0',
-    onAccent: '#001A33',
+    accent: '#A9B8CC',
+    onAccent: '#073767',
     navy: '#073767',
     amber: '#E5A823',
     amberSoft: '#3A2E12',

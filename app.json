@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "PackTrack",
+    "name": "Firefly",
     "slug": "packtrack-app",
     "owner": "sjsuwalkingcompanion",
     "version": "1.0.0",
@@ -43,14 +43,14 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "PackTrack shares your location with your walking group while you walk home together."
+          "locationWhenInUsePermission": "Firefly uses your location while you meet up and walk home with your group, so buddies can find each other. Names unlock only within about 30 feet."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "PackTrack uses your photos to set your profile picture.",
-          "cameraPermission": "PackTrack uses the camera for your verification photos and to photograph problems you report on campus.",
+          "photosPermission": "Firefly uses your photos to set your profile picture.",
+          "cameraPermission": "Firefly uses the camera for your verification photos and to photograph problems you report on campus.",
           "microphonePermission": false
         }
       ],
